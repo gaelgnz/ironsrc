@@ -1,0 +1,38 @@
+- assets / partially only textures
+- first person controller / yes
+- physics /only for player
+- console
+- weapon viewmodel
+- map struct
+- menu
+- multiplayer
+
+maybe add a NetEntity type so server only needs to send what client needs to render
+
+fix in server.c clients dont send input anymore, they send position
+
+multiplayer 
+
+server.c main runs at a port at a fixed hz rate, with ticks
+server accepts connection
+
+client sends Userjoin
+server accepts Userjoin (username)
+
+server replies with UserjoinACK
+
+client recieves userjoinACK (contains map and player list)
+client inmediatedly listens for ServerUpdate
+
+*a
+
+server sends ServerUpdate
+
+client reads ServerUpdate
+client applies ServerUpdate to his local world
+
+client sends UserCmd (position and velocity)
+server recieves UserCmd 
+server decides its not ridiculous -> applies
+
+goto *a

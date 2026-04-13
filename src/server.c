@@ -3,7 +3,28 @@
 #include "raymath.h"
 #include "stdio.h"
 #include "string.h"
+#include "time.h"
 #include <raylib.h>
+
+int main() {
+    struct timespec now, last_tick;
+    clock_gettime(CLOCK_MONOTONIC, &last_tick);
+
+    Server sv = {0};
+    sv_init(&sv);
+
+    for (;;) {
+        clock_gettime(CLOCK_MONOTONIC, &now);
+
+        double elapsed = (now.tv_sec - last_tick.tv_sec) +
+                         (now.tv_nsec - last_tick.tv_nsec) / 1e9;
+
+        if (elapsed >= (1.0 / 20.0)) { // 20hz
+            sv_tick(&sv, elapsed);
+            last_tick = now;
+        }
+    }
+}
 
 void sv_receive_input(Server *server, int client_id, UserCmd cmd) {
     if (server->last_commands[client_id].jumping)
@@ -68,6 +89,7 @@ void sv_tick(Server *server, float dt) {
 
         e->position = Vector3Add(e->position, Vector3Scale(e->velocity, dt));
     }
+    server->tick++;
 }
 void sv_init(Server *server) {
     server->entity_count = 1;

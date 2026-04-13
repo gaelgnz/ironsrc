@@ -1,7 +1,0 @@
-- assets
-- first person controller, physics, variables
-- console
-- weapon viewmodel
-- map struct
-- menu
-- multiplayer

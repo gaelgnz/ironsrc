@@ -3,6 +3,7 @@
 
 #include "entity.h"
 #include "protocol.h"
+#include "stdint.h"
 
 #define MAX_CLIENTS 16
 #define MAX_ENTITIES 256
@@ -10,7 +11,7 @@
 typedef struct Server {
     Entity entities[MAX_ENTITIES];
     int entity_count;
-
+    uint32_t tick;
     UserCmd last_commands[MAX_CLIENTS];
 } Server;
 
