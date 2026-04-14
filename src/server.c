@@ -1,38 +1,104 @@
 #include "server.h"
 #include "entity.h"
+#include "protocol.h"
 #include "raymath.h"
 #include "stdio.h"
 #include "string.h"
 #include "time.h"
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <pthread.h>
 #include <raylib.h>
+#include <strings.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#define PORT 4445
+
+typedef struct {
+    int listenfd;
+    Server *sv;
+} RecvThreadArgs;
+
+void *recv_thread(void *arg) {
+    RecvThreadArgs *args = (RecvThreadArgs *)arg;
+
+    Server *sv = args->sv;
+    int *listenfd = &args->listenfd;
+
+    struct sockaddr_in client_addr;
+    socklen_t client_len = sizeof(client_addr);
+
+    for (;;) {
+        Packet *pkt;
+        uint8_t buf[sizeof(Packet) + sizeof(pktUserJoin)];
+        int n = recvfrom(*listenfd, buf, sizeof(buf), 0,
+                         (struct sockaddr *)&client_addr, &client_len);
+        if (n < 0)
+            continue;
+
+        pkt = (Packet *)buf;
+        if (pkt->type == PKT_USER_JOIN) {
+            pktUserJoin *join = (pktUserJoin *)pkt->data;
+            printf("user joined: %s\n", join->userName);
+
+            uint8_t ack_buf[sizeof(Packet) + sizeof(pktUserJoinAck)];
+            Packet *ack_pkt = (Packet *)ack_buf;
+            ack_pkt->type = PKT_USER_JOIN_ACK;
+
+            pktUserJoinAck *ack_data = (pktUserJoinAck *)ack_pkt->data;
+            ack_data->accepted = true;
+
+            sendto(*listenfd, ack_buf, sizeof(ack_buf), 0,
+                   (struct sockaddr *)&client_addr, client_len);
+
+            ack_pkt->type = PKT_USER_JOIN_ACK;
+        } else if (pkt->type == PKT_USER_UPDATE) {
+        };
+    }
+    return NULL;
+}
 
 int main() {
-    struct timespec now, last_tick;
-    clock_gettime(CLOCK_MONOTONIC, &last_tick);
+    int listenfd;
+    struct sockaddr_in sv_addr;
+    bzero(&sv_addr, sizeof(sv_addr));
+    listenfd = socket(AF_INET, SOCK_DGRAM, 0);
+    sv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    sv_addr.sin_port = htons(PORT);
+    sv_addr.sin_family = AF_INET;
+    bind(listenfd, (struct sockaddr *)&sv_addr, sizeof(sv_addr));
+    printf("listening on 0.0.0.0:%d\n", PORT);
 
     Server sv = {0};
     sv_init(&sv);
 
+    RecvThreadArgs args = {listenfd, &sv};
+    pthread_t recv_tid;
+    pthread_create(&recv_tid, NULL, recv_thread, &args);
+
+    struct timespec now, last_tick;
+    clock_gettime(CLOCK_MONOTONIC, &last_tick);
     for (;;) {
         clock_gettime(CLOCK_MONOTONIC, &now);
-
         double elapsed = (now.tv_sec - last_tick.tv_sec) +
                          (now.tv_nsec - last_tick.tv_nsec) / 1e9;
-
-        if (elapsed >= (1.0 / 20.0)) { // 20hz
+        if (elapsed >= (1.0 / 20.0)) {
             sv_tick(&sv, elapsed);
             last_tick = now;
         }
     }
+
+    pthread_join(recv_tid, NULL);
 }
 
-void sv_receive_input(Server *server, int client_id, UserCmd cmd) {
-    if (server->last_commands[client_id].jumping)
-        cmd.jumping = true;
-    server->last_commands[client_id] = cmd;
+void sv_receive_update(Server *server, int client_id, UserCmd cmd) {
+
+    server->last_client_updates[client_id] = cmd;
 }
 
-void sv_spawn_entity(Server *server, Entity entity) {
+inline void sv_spawn_entity(Server *server, Entity entity) {
+    if (server->entity_count >= MAX_ENTITIES)
+        return;
     Entity *pEntitySlot = &server->entities[server->entity_count];
     *pEntitySlot = entity;
     pEntitySlot->client_id = -1;
@@ -46,36 +112,10 @@ void sv_tick(Server *server, float dt) {
             continue;
 
         if (e->client_id != -1) {
-            UserCmd cmd = server->last_commands[e->client_id];
+            UserCmd cmd = server->last_client_updates[e->client_id];
 
-            float accel = 50.0f;
-            float sensitivity = 0.1f;
-
-            e->player.yaw -= (cmd.mouseDelta.x * sensitivity);
-            e->player.pitch -= (cmd.mouseDelta.y * sensitivity);
-
-            if (e->player.pitch > 89.0f)
-                e->player.pitch = 89.0f;
-            if (e->player.pitch < -89.0f)
-                e->player.pitch = -89.0f;
-
-            float radYaw = e->player.yaw * DEG2RAD;
-            Vector3 forward = {sinf(radYaw), 0, cosf(radYaw)};
-            Vector3 right = {cosf(radYaw), 0, -sinf(radYaw)};
-
-            // fix here (mentioned in objectives)
-            e->velocity.x += (forward.x * cmd.wishVelocity.z +
-                              right.x * cmd.wishVelocity.x) *
-                             accel * dt;
-            e->velocity.z += (forward.z * cmd.wishVelocity.z +
-                              right.z * cmd.wishVelocity.x) *
-                             accel * dt;
-
-            if (cmd.jumping && e->position.y <= 0.01f) {
-                e->velocity.y = 7.0f;
-                server->last_commands[e->client_id].jumping =
-                    false; // consume it
-            }
+            e->position = cmd.position;
+            e->velocity = cmd.current_velocity;
         }
 
         e->velocity.x *= 0.8f;
@@ -92,17 +132,22 @@ void sv_tick(Server *server, float dt) {
     server->tick++;
 }
 void sv_init(Server *server) {
-    server->entity_count = 1;
-    strncpy(server->entities[0].player.username, "gael",
-            sizeof(server->entities[0].player.username) - 1);
-    server->entities[0].type = ENT_PLAYER;
-    server->entities[0].client_id = 0;
-    server->entities[0].position = (Vector3){0, 0, 0};
-    server->entities[0].active = true;
 
     Entity entity = (Entity){0};
     entity.position = Vector3One();
     entity.active = true;
     entity.type = ENT_NPC_GENERIC;
     sv_spawn_entity(server, entity);
+}
+
+void sv_join_player(Server *server, const char username[]) {
+    const int entity_count = server->entity_count;
+    strncpy(server->entities[0].player.username, username,
+            sizeof(server->entities[0].player.username) - 1);
+    server->entities[entity_count].type = ENT_PLAYER;
+    server->entities[entity_count].client_id = 0;
+    server->entities[entity_count].position = (Vector3){0, 0, 0};
+    server->entities[entity_count].active = true;
+
+    server->entity_count++;
 }

@@ -4,9 +4,8 @@
 #include "raylib.h"
 #include "raymath.h"
 #include "render.h"
-#include "server.h"
 #include "stdio.h"
-
+#include <unistd.h>
 void render_entity(Camera *camera, Assets *assets, Entity entity) {
     if (entity.type == ENT_NPC_GENERIC) {
         printf("%f", entity.position.x);
@@ -14,27 +13,74 @@ void render_entity(Camera *camera, Assets *assets, Entity entity) {
                       1., WHITE);
         DrawCubeWires(entity.position, 30.f, 30.f, 30.f, BLACK);
     } else {
-        printf("not drawing because %s is not npc\n", entity.player.username);
     }
 }
 
+typedef enum GameMode {
+    GM_MENU,
+    GM_CONNECTING,
+    GM_INGAME,
+} GameMode;
+
+typedef struct Global {
+    GameMode gamemode;
+    Assets assets;
+    union {};
+} Global;
+
+void menu_loop(Global *global) {
+    while (global->gamemode == GM_MENU) {
+        BeginDrawing();
+
+        ClearBackground(WHITE);
+
+        EndDrawing();
+    }
+}
+
+void game_loop(Global *global) {}
+
+void connect(Global *global) {}
 int main() {
-    InitWindow(1280, 720, "IronSrc Engine");
+
+    InitWindow(800, 600, "IronSrc");
     SetTargetFPS(144);
+    sleep(5);
+
+    if (!IsWindowReady()) {
+        printf("Window init failed\n");
+        return 1;
+    }
+    Global global = {0};
+    global.assets = assets_load();
+    global.gamemode = GM_MENU;
 
     Font font = LoadFont("assets/font.ttf");
 
-    Server sv = {0};
-    sv_init(&sv);
-
-    Entity *p = &sv.entities[0];
-
     Assets assets = assets_load();
 
+    switch (global.gamemode) {
+    case GM_MENU:
+        menu_loop(&global);
+        break;
+    case GM_CONNECTING:
+        connect(&global);
+        break;
+    case GM_INGAME:
+        game_loop(&global);
+        break;
+    };
     const float dt = 1.0f / 60.0f;
     float accumulator = 0.0f;
 
+    Vector3 velocity = (Vector3){0};
+    Vector3 position = (Vector3){0};
+
+    float yaw;
+    float pitch;
     DisableCursor();
+
+    Entity local_entities[256]; // render only
 
     while (!WindowShouldClose()) {
         float frameTime = GetFrameTime();
@@ -43,35 +89,48 @@ int main() {
         accumulator += frameTime;
 
         UserCmd cmd = {0};
+        float speed = 5.0f;
+        Vector3 forward = {sinf(yaw * DEG2RAD), 0, cosf(yaw * DEG2RAD)};
+        Vector3 right = {cosf(yaw * DEG2RAD), 0, -sinf(yaw * DEG2RAD)};
+
         if (IsKeyDown(KEY_W))
-            cmd.wishVelocity.z = 1;
+            velocity =
+                Vector3Add(velocity, Vector3Scale(forward, speed * frameTime));
         if (IsKeyDown(KEY_S))
-            cmd.wishVelocity.z = -1;
+            velocity =
+                Vector3Add(velocity, Vector3Scale(forward, -speed * frameTime));
         if (IsKeyDown(KEY_A))
-            cmd.wishVelocity.x = 1;
+            velocity =
+                Vector3Add(velocity, Vector3Scale(right, -speed * frameTime));
         if (IsKeyDown(KEY_D))
-            cmd.wishVelocity.x = -1;
+            velocity =
+                Vector3Add(velocity, Vector3Scale(right, speed * frameTime));
+
+        velocity.y -= 20.0f * frameTime;
+        if (position.y < 0.0f) {
+            position.y = 0.0f;
+            velocity.y = 0.0f;
+        }
+        position = Vector3Add(position, Vector3Scale(velocity, frameTime));
+
+        // Damping
+        velocity.x *= 0.8f;
+        velocity.z *= 0.8f;
 
         if (IsKeyPressed(KEY_SPACE))
-            cmd.jumping = true;
-        cmd.mouseDelta = GetMouseDelta();
-
-        sv_receive_input(&sv, 0, cmd);
-
-        while (accumulator >= dt) {
-            sv_tick(&sv, dt);
-            accumulator -= dt;
-        }
+            velocity.y -= 10;
+        cmd.position = position;
+        cmd.current_velocity = velocity;
 
         BeginDrawing();
         ClearBackground(BLUE);
         DrawFPS(10, 10);
 
-        float ry = p->player.yaw * DEG2RAD;
-        float rp = p->player.pitch * DEG2RAD;
+        float ry = yaw * DEG2RAD;
+        float rp = pitch * DEG2RAD;
 
         Camera3D camera = {0};
-        camera.position = Vector3Add(p->position, (Vector3){0, 1.0f, 0});
+        camera.position = Vector3Add(position, (Vector3){0, 1.0f, 0});
         camera.target = (Vector3){camera.position.x + sinf(ry) * cosf(rp),
                                   camera.position.y + sinf(rp),
                                   camera.position.z + cosf(ry) * cosf(rp)};
@@ -84,13 +143,6 @@ int main() {
         DrawCubeTexture(get_texture(&assets, "brick_01"),
                         (Vector3){0, -0.5f, 0}, 100.0f, 1.0f, 100.0f, WHITE);
 
-        for (int i = 0; i < sv.entity_count; i++) {
-
-            if (!sv.entities[i].active)
-                continue;
-
-            render_entity(&camera, &assets, sv.entities[i]);
-        }
         EndMode3D();
         DrawTextEx(font, "IRONSRC ENGINE - SERVER TICK: 60Hz",
                    (Vector2){20, 20}, 30, 0, WHITE);

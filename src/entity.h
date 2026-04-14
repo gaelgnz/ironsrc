@@ -14,7 +14,6 @@ typedef enum EntityType {
 typedef struct PlayerData {
     char username[16];
     int health;
-    float yaw, pitch;
 } PlayerData;
 
 typedef struct NpcData {

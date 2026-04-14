@@ -2,11 +2,15 @@ CC      = clang
 CFLAGS  = -Wall -Wextra -O3 -I./include -I./enet/include
 LDFLAGS = -lraylib -lGL -lm -lpthread -lrt -lX11
 LDFLAGS_SERVER = -lm -lpthread -lrt
+
 BIN     = ironsrc
 SERVER  = server
-SRCS = $(wildcard src/*.c) $(wildcard enet/*.c)
+
+# client = everything except server.c
+SRCS = $(filter-out src/server.c, $(wildcard src/*.c)) $(wildcard enet/*.c)
 OBJS = $(patsubst %.c, obj/%.o, $(notdir $(SRCS)))
 
+# server = only server.c + enet
 SERVER_SRCS = src/server.c $(wildcard enet/*.c)
 SERVER_OBJS = $(patsubst %.c, obj/%.o, $(notdir $(SERVER_SRCS)))
 
@@ -26,8 +30,7 @@ obj/%.o: src/%.c | obj
 
 obj/%.o: enet/%.c | obj
 	$(CC) $(CFLAGS) -c $< -o $@
-obj/server.o: src/server.c | obj
-	$(CC) $(CFLAGS) -c $< -o $@
+
 obj:
 	mkdir -p obj
 

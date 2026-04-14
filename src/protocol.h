@@ -7,17 +7,21 @@
 
 #define NOT_CLIENT -1
 
+typedef enum PacketType {
+    PKT_USER_UPDATE,
+    PKT_USER_JOIN,
+    PKT_USER_JOIN_ACK,
+    PKT_SERVER_UPDATE,
+} packetType;
+
 typedef struct {
     uint8_t type;
     uint8_t data[];
 } Packet;
 
-typedef struct UserCmd {
+typedef struct pktUserUpdate {
     Vector3 position;
     Vector3 current_velocity;
-    bool jumping;
-    bool attacking;
-    Vector2 mouseDelta;
 } UserCmd;
 
 typedef struct pktUserJoin {

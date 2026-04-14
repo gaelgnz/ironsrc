@@ -12,12 +12,13 @@ typedef struct Server {
     Entity entities[MAX_ENTITIES];
     int entity_count;
     uint32_t tick;
-    UserCmd last_commands[MAX_CLIENTS];
+    UserCmd last_client_updates[MAX_CLIENTS];
 } Server;
 
 void sv_init(Server *server);
+void sv_join_player(Server *server, const char username[16]);
 void sv_tick(Server *server, float deltaTime);
 void sv_spawn_entity(Server *server, Entity entity);
-void sv_receive_input(Server *server, int client_id, UserCmd cmd);
+void sv_receive_update(Server *server, int client_id, UserCmd cmd);
 
 #endif
