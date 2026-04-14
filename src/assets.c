@@ -1,3 +1,7 @@
+/*
+ * Asset loading (textures, audio, etc..)
+ *
+ */
 #include "assets.h"
 #include "raylib.h"
 #include <stdio.h>
@@ -15,17 +19,12 @@ Assets assets_load() {
     FilePathList files = LoadDirectoryFiles(dir);
 
     for (int i = 0; i < files.count && assets.count < TEXTURES_MAX; i++) {
-        // Check if it's a PNG
+
         if (IsFileExtension(files.paths[i], ".png")) {
-            // 1. Load the texture
             Texture2D tex = LoadTexture(files.paths[i]);
 
-            // 2. Get the filename without the path or extension for the name
-            // GetFileNameWithoutExt returns "brick" from
-            // "assets/textures/brick.png"
             const char *fileName = GetFileNameWithoutExt(files.paths[i]);
 
-            // 3. Store it
             strncpy(assets.textures[assets.count].name, fileName, NAME_MAX);
             assets.textures[assets.count].texture = tex;
 

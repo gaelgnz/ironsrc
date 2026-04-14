@@ -28,7 +28,7 @@ int main() {
 
 void sv_receive_input(Server *server, int client_id, UserCmd cmd) {
     if (server->last_commands[client_id].jumping)
-        cmd.jumping = true; // keep it latched
+        cmd.jumping = true;
     server->last_commands[client_id] = cmd;
 }
 
@@ -48,7 +48,7 @@ void sv_tick(Server *server, float dt) {
         if (e->client_id != -1) {
             UserCmd cmd = server->last_commands[e->client_id];
 
-            float accel = 50.0f; // How fast you reach max speed
+            float accel = 50.0f;
             float sensitivity = 0.1f;
 
             e->player.yaw -= (cmd.mouseDelta.x * sensitivity);
@@ -63,7 +63,7 @@ void sv_tick(Server *server, float dt) {
             Vector3 forward = {sinf(radYaw), 0, cosf(radYaw)};
             Vector3 right = {cosf(radYaw), 0, -sinf(radYaw)};
 
-            // ACCELERATE: Add to velocity instead of replacing it
+            // fix here (mentioned in objectives)
             e->velocity.x += (forward.x * cmd.wishVelocity.z +
                               right.x * cmd.wishVelocity.x) *
                              accel * dt;

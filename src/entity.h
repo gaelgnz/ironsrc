@@ -1,6 +1,7 @@
 #ifndef ENTITY_H
 #define ENTITY_H
 
+#define NOT_PLAYER -1
 #include "raylib.h"
 
 typedef enum EntityType {

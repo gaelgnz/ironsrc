@@ -19,9 +19,8 @@ void render_entity(Camera *camera, Assets *assets, Entity entity) {
 }
 
 int main() {
-    // 1. Setup Raylib
     InitWindow(1280, 720, "IronSrc Engine");
-    SetTargetFPS(144); // Client can run fast
+    SetTargetFPS(144);
 
     Font font = LoadFont("assets/font.ttf");
 
@@ -32,8 +31,7 @@ int main() {
 
     Assets assets = assets_load();
 
-    // Simulation settings
-    const float dt = 1.0f / 60.0f; // Server ticks at 60Hz
+    const float dt = 1.0f / 60.0f;
     float accumulator = 0.0f;
 
     DisableCursor();
@@ -41,10 +39,9 @@ int main() {
     while (!WindowShouldClose()) {
         float frameTime = GetFrameTime();
         if (frameTime > 0.25f)
-            frameTime = 0.25f; // "Spiral of death" protection
+            frameTime = 0.25f;
         accumulator += frameTime;
 
-        // --- 3. INPUT (Client Side) ---
         UserCmd cmd = {0};
         if (IsKeyDown(KEY_W))
             cmd.wishVelocity.z = 1;
