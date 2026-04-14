@@ -1,40 +1,30 @@
-CC      = clang
-CFLAGS  = -Wall -Wextra -O3 -I./include -I./enet/include
-LDFLAGS = -lraylib -lGL -lm -lpthread -lrt -lX11
-LDFLAGS_SERVER = -lm -lpthread -lrt
+CC = clang
+CFLAGS = -Wall -Wextra -O2
+LDFLAGS = -lraylib -lm -ldl -lpthread -lX11
 
-BIN     = ironsrc
-SERVER  = server
+SRC_DIR = src
+OBJ_DIR = obj
 
-# client = everything except server.c
-SRCS = $(filter-out src/server.c, $(wildcard src/*.c)) $(wildcard enet/*.c)
-OBJS = $(patsubst %.c, obj/%.o, $(notdir $(SRCS)))
+SRCS = $(wildcard $(SRC_DIR)/*.c)
+OBJS = $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SRCS))
 
-# server = only server.c + enet
-SERVER_SRCS = src/server.c $(wildcard enet/*.c)
-SERVER_OBJS = $(patsubst %.c, obj/%.o, $(notdir $(SERVER_SRCS)))
+TARGET = app
+SERVER = server
 
-all: $(BIN)
-	./$(BIN)
+# remove server.o from normal build
+OBJS_NO_SERVER = $(filter-out $(OBJ_DIR)/server.o, $(OBJS))
 
-server: $(SERVER)
+all: $(TARGET)
 
-$(BIN): $(OBJS)
-	$(CC) $(OBJS) -o $(BIN) $(LDFLAGS)
+$(TARGET): $(OBJS_NO_SERVER)
+	$(CC) $^ -o $@ $(LDFLAGS)
 
-$(SERVER): $(SERVER_OBJS)
-	$(CC) $(SERVER_OBJS) -o $(SERVER) $(LDFLAGS_SERVER)
-
-obj/%.o: src/%.c | obj
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
+	@mkdir -p $(OBJ_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-obj/%.o: enet/%.c | obj
-	$(CC) $(CFLAGS) -c $< -o $@
-
-obj:
-	mkdir -p obj
+server: $(OBJ_DIR)/server.o
+	$(CC) $^ -o $(SERVER) $(LDFLAGS)
 
 clean:
-	rm -rf obj $(BIN) $(SERVER)
-
-.PHONY: all clean server
+	rm -rf $(OBJ_DIR) $(TARGET) $(SERVER)

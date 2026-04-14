@@ -5,7 +5,7 @@
 #include "raymath.h"
 #include "render.h"
 #include "stdio.h"
-#include <unistd.h>
+
 void render_entity(Camera *camera, Assets *assets, Entity entity) {
     if (entity.type == ENT_NPC_GENERIC) {
         printf("%f", entity.position.x);
@@ -30,11 +30,6 @@ typedef struct Global {
 
 void menu_loop(Global *global) {
     while (global->gamemode == GM_MENU) {
-        BeginDrawing();
-
-        ClearBackground(WHITE);
-
-        EndDrawing();
     }
 }
 
@@ -42,34 +37,13 @@ void game_loop(Global *global) {}
 
 void connect(Global *global) {}
 int main() {
-
     InitWindow(800, 600, "IronSrc");
     SetTargetFPS(144);
-    sleep(5);
-
-    if (!IsWindowReady()) {
-        printf("Window init failed\n");
-        return 1;
-    }
-    Global global = {0};
-    global.assets = assets_load();
-    global.gamemode = GM_MENU;
 
     Font font = LoadFont("assets/font.ttf");
 
     Assets assets = assets_load();
 
-    switch (global.gamemode) {
-    case GM_MENU:
-        menu_loop(&global);
-        break;
-    case GM_CONNECTING:
-        connect(&global);
-        break;
-    case GM_INGAME:
-        game_loop(&global);
-        break;
-    };
     const float dt = 1.0f / 60.0f;
     float accumulator = 0.0f;
 
