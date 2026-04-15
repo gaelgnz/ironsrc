@@ -1,30 +1,26 @@
-CC = clang
-CFLAGS = -Wall -Wextra -O2
-LDFLAGS = -lraylib -lm -ldl -lpthread -lX11
+CC = gcc
+CFLAGS = -Wall -Wextra -Iraylib/src -Isrc
+LDFLAGS = -Lraylib/src -lraylib -lm -lpthread -ldl -lrt -lX11 -lglfw
 
+BUILD_DIR = build
 SRC_DIR = src
-OBJ_DIR = obj
 
-SRCS = $(wildcard $(SRC_DIR)/*.c)
-OBJS = $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SRCS))
+SRCS = $(filter-out $(SRC_DIR)/server.c,$(wildcard $(SRC_DIR)/*.c))
+OBJS = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SRCS))
 
-TARGET = app
-SERVER = server
+.PHONY: all server clean
 
-# remove server.o from normal build
-OBJS_NO_SERVER = $(filter-out $(OBJ_DIR)/server.o, $(OBJS))
+all: ironsrc
 
-all: $(TARGET)
+ironsrc: $(OBJS)
+	$(CC) $(OBJS) -o ironsrc $(LDFLAGS)
 
-$(TARGET): $(OBJS_NO_SERVER)
-	$(CC) $^ -o $@ $(LDFLAGS)
+server: $(BUILD_DIR)/server.o
+	$(CC) $(BUILD_DIR)/server.o -o server $(LDFLAGS)
 
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
-	@mkdir -p $(OBJ_DIR)
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
+	@mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-server: $(OBJ_DIR)/server.o
-	$(CC) $^ -o $(SERVER) $(LDFLAGS)
-
 clean:
-	rm -rf $(OBJ_DIR) $(TARGET) $(SERVER)
+	rm -rf $(BUILD_DIR) ironsrc server

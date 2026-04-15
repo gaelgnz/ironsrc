@@ -5,7 +5,8 @@
 #include "raymath.h"
 #include "render.h"
 #include "stdio.h"
-
+#include <stdlib.h>
+// ...
 void render_entity(Camera *camera, Assets *assets, Entity entity) {
     if (entity.type == ENT_NPC_GENERIC) {
         printf("%f", entity.position.x);
@@ -25,7 +26,6 @@ typedef enum GameMode {
 typedef struct Global {
     GameMode gamemode;
     Assets assets;
-    union {};
 } Global;
 
 void menu_loop(Global *global) {
@@ -37,7 +37,8 @@ void game_loop(Global *global) {}
 
 void connect(Global *global) {}
 int main() {
-    InitWindow(800, 600, "IronSrc");
+
+    InitWindow(800, 600, "IronSrc test");
     SetTargetFPS(144);
 
     Font font = LoadFont("assets/font.ttf");
