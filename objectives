@@ -1,17 +1,18 @@
-- assets / partially only textures
-- first person controller / yes
-- physics /only for player
-- console
-- weapon viewmodel
-- map struct
-- menu
-- multiplayer
+TO DO:
+handle gm_connecting
+implement clientupdate and serverupdate for once
+menu interface using rlgui
+add a NetEntity type so server only needs to send what client needs to render
+TAB menu
+more entity types (particles sounds etcc)
+chat in server struct
+start map desing, bsp or custom format
+map triggers
+model loading
 
-maybe add a NetEntity type so server only needs to send what client needs to render
 
-fix in server.c clients dont send input anymore, they send position
 
-multiplayer 
+Multiplayer philosophy:
 
 server.c main runs at a port at a fixed hz rate, with ticks
 server accepts connection
@@ -26,9 +27,9 @@ client inmediatedly listens for ServerUpdate
 
 *a
 
-server sends ServerUpdate
+server sends ServerUpdate (contains entities (also players))
 
-client reads ServerUpdate
+client reads ServerUpdate // Client has to remove himself from the client list from server update to avoid duplication
 client applies ServerUpdate to his local world
 
 client sends UserCmd (position and velocity)

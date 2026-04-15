@@ -3,7 +3,8 @@
 
 #include "entity.h"
 #include "raylib.h"
-#include <stdint.h>
+#include "stdint.h"
+#include <stddef.h>
 
 #define NOT_CLIENT -1
 
@@ -11,7 +12,9 @@ typedef enum PacketType {
     PKT_USER_UPDATE,
     PKT_USER_JOIN,
     PKT_USER_JOIN_ACK,
+    PKT_USER_DISCONNECT,
     PKT_SERVER_UPDATE,
+
 } packetType;
 
 typedef struct {
@@ -22,7 +25,7 @@ typedef struct {
 typedef struct pktUserUpdate {
     Vector3 position;
     Vector3 current_velocity;
-} UserCmd;
+} pktUserUpdate;
 
 typedef struct pktUserJoin {
     char userName[12];
@@ -38,4 +41,8 @@ typedef struct pktServerUpdate {
     uint32_t tick;
 
 } pktServerUpdate;
+
+inline void *pack_packet_typed(void *buf, int type, const void *payload,
+                               size_t size);
+
 #endif

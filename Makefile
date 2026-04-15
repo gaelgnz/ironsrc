@@ -1,4 +1,4 @@
-CC = gcc
+CC = clang
 CFLAGS = -Wall -Wextra -Iraylib/src -Isrc
 LDFLAGS = -Lraylib/src -lraylib -lm -lpthread -ldl -lrt -lX11 -lglfw
 
