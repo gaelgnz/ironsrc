@@ -1,4 +1,4 @@
-# Ironsrc
+# Ironsrc (We're looking for contributors!)
 
 > An FPS game engine that encourages users to build their own open-source FPS games.
 
@@ -6,7 +6,7 @@
 
 ---
 
-## Features
+## Features (not yet inplemented)
 
 - Multiplayer
 - Multithreaded server
