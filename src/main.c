@@ -1,10 +1,10 @@
 #include "assets.h"
 #include "entity.h"
 #include "protocol.h"
+
 #include "raylib.h"
 #include "raymath.h"
 #include "render.h"
-#include "stdio.h"
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <pthread.h>
@@ -14,6 +14,9 @@
 #include <strings.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
+#define CHAT_VIEW 10
+
 void render_entity(Camera *camera, Assets *assets, Entity entity) {
     if (entity.type == ENT_NPC_GENERIC) {
         printf("%f", entity.position.x);
@@ -40,6 +43,11 @@ typedef struct IngameState {
     NetEntity entities[256];
     int entity_count;
     pthread_mutex_t entity_mutex;
+
+    Font default_font; // this is temporary, fonts will be added to assets.c
+    Entity myself;     // entity from server containing the local player
+
+    char chat[8192];
 } IngameState;
 
 typedef struct Global {
@@ -71,8 +79,12 @@ void *client_recv_thread(void *arg) {
         pktServerUpdate *upd = (pktServerUpdate *)pkt->data;
         printf("got server update: %d entities\n", upd->entity_count);
         pthread_mutex_lock(&global->ingame.entity_mutex);
+
         memcpy(global->ingame.entities, upd->entities, sizeof(upd->entities));
+        global->ingame.myself = upd->your_player;
         global->ingame.entity_count = upd->entity_count;
+        strcpy(global->ingame.chat, upd->chat);
+
         pthread_mutex_unlock(&global->ingame.entity_mutex);
     }
     return NULL;
@@ -128,6 +140,9 @@ void connect_sv(Global *global) {
                 global->ingame.sockfd = sockfd;
                 global->ingame.sv_addr = sv_addr;
                 global->gamemode = GM_INGAME;
+
+                global->ingame.default_font = LoadFont("assets/fonts/font.ttf");
+
                 RecvArgs *rargs = malloc(sizeof(RecvArgs));
                 rargs->global = global;
                 pthread_t tid;
@@ -143,7 +158,7 @@ void connect_sv(Global *global) {
 void menu_loop(Global *global) {
 
     BeginDrawing();
-    ClearBackground(WHITE);
+    ClearBackground(GRAY);
     EndDrawing();
     connect_sv(global);
 }
@@ -192,6 +207,10 @@ void game_loop(Global *global) {
     }
 
     if (IsKeyDown(KEY_U)) {
+        ShowCursor();
+    }
+    if (IsKeyDown(KEY_I)) {
+        DisableCursor();
     }
     state->velocity.y -= 20.0f * frameTime;
 
@@ -249,17 +268,21 @@ void game_loop(Global *global) {
     memcpy(snapshot, state->entities, count * sizeof(NetEntity));
     pthread_mutex_unlock(&state->entity_mutex);
 
-    BeginMode3D(camera);
     for (int i = 0; i < count; i++) {
-        if (snapshot[i].active)
-            printf("rendering %d entities\n", count);
+
         render_net_entity(&camera, &global->assets, snapshot[i]);
     }
     EndMode3D();
-    EndMode3D();
 
-    // DrawTextEx(global->font, "IRONSRC ENGINE - SERVER TICK: 60Hz",
-    //            (Vector2){20, 20}, 30, 0, WHITE);
+    char text[64];
+    snprintf(text, sizeof(text), "health: %d", state->myself.player.health);
+
+    DrawTextEx(global->ingame.default_font, text, (Vector2){20, 20}, 30, 0,
+               WHITE);
+
+    printf("%s\n", state->chat);
+    DrawTextEx(global->ingame.default_font, global->ingame.chat,
+               (Vector2){20, GetScreenHeight() / 2.f}, 10, 0, WHITE);
 
     EndDrawing();
 

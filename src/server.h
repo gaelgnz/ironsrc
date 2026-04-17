@@ -16,6 +16,7 @@
 
 #define MAX_CLIENTS 16
 #define MAX_ENTITIES 256
+#define CHAT_LEN 1024
 
 typedef struct Client {
     char username[16];
@@ -34,6 +35,8 @@ typedef struct Server {
     Client clients[MAX_CLIENTS];
     int client_count;
     pktUserUpdate last_client_updates[MAX_CLIENTS];
+
+    char chat[CHAT_LEN];
 } Server;
 
 void sv_init(Server *server);

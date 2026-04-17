@@ -6,8 +6,10 @@
 void render_net_entity(Camera *camera, Assets *assets, NetEntity entity) {
     if (!entity.active)
         return;
-    DrawBillboard(*camera, get_texture(assets, "player"), entity.position, 1.f,
-                  WHITE);
+
+    Vector3 pos = entity.position;
+    pos.y += 0.5f;
+    DrawBillboard(*camera, get_texture(assets, "player"), pos, 1.f, WHITE);
 }
 void DrawCubeTexture(Texture2D texture, Vector3 position, float width,
                      float height, float length, Color color) {

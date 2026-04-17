@@ -23,6 +23,14 @@
 
 pthread_mutex_t server_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+Entity *entity_from_client_id(Server *sv, int client_id) {
+    for (int i = 0; i < MAX_ENTITIES; i++) {
+        if (sv->entities[i].client_id == client_id) {
+            return &sv->entities[i];
+        }
+    }
+    return NULL;
+}
 void sv_broadcast(Server *server, int listenfd) {
     static uint8_t buf[sizeof(Packet) + sizeof(pktServerUpdate)];
     Packet *pkt = (Packet *)buf;
@@ -32,8 +40,18 @@ void sv_broadcast(Server *server, int listenfd) {
 
     for (int c = 0; c < server->client_count; c++) {
         printf("broadcasting %d entities to client %d\n", upd->entity_count, c);
+        Entity *me = entity_from_client_id(server, c);
+
+        if (me) {
+            upd->your_player = *me;
+        } else {
+            memset(&upd->your_player, 0, sizeof(Entity));
+        }
         upd->entity_count = 0;
 
+        // strcpy(upd->chat, server->chat);
+
+        strcpy(upd->chat, "gael: yogurt");
         for (int i = 0; i < server->entity_count; i++) {
             Entity *e = &server->entities[i];
             if (!e->active)
@@ -106,6 +124,8 @@ void sv_join_player(Server *server, const char username[],
     e->client_id = id;
     e->position = (Vector3){0, 0, 0};
     e->active = true;
+
+    e->player.health = 67; // funniest code ever
 
     server->client_count++;
     server->entity_count++;
@@ -181,8 +201,11 @@ void sv_tick(Server *server, float dt) {
 
         e->position = Vector3Add(e->position, Vector3Scale(e->velocity, dt));
     }
+    printf("entities: %d players: %d\n", server->entity_count,
+           server->client_count);
     for (int i = 0; i < server->entity_count; i++) {
         Entity *e = &server->entities[i];
+
         printf("  entity %d: active=%d type=%d client_id=%d\n", i, e->active,
                e->type, e->client_id);
         if (!e->active)
@@ -190,9 +213,16 @@ void sv_tick(Server *server, float dt) {
         // ...
     }
     server->tick++;
-    printf("sv_tick entity_count before broadcast: %d\n", server->entity_count);
-    printf("sizeof pktServerUpdate: %zu\n", sizeof(pktServerUpdate));
-    printf("sizeof buf: %zu\n", sizeof(Packet) + sizeof(pktServerUpdate));
+}
+
+void sv_push_message(Server *sv, int client_id, char *message) {
+    char *result = strcat(sv->clients[client_id].username, ":");
+
+    strcat(result, message);
+
+    strcat(sv->chat, result);
+
+    printf("%s", sv->chat);
 }
 
 typedef struct RecvThreadArgs {
@@ -274,7 +304,16 @@ void *recv_thread(void *arg) {
             sv_receive_update(sv, id, *upd);
             break;
         }
+        case PKT_USER_MESSAGE: {
+            if (id == -1)
+                break;
 
+            pktUserMessage *msg = (pktUserMessage *)pkt->data;
+            char string[MAX_MSG_LEN];
+            strncpy(string, msg->message, MAX_MSG_LEN - 1);
+            string[MAX_MSG_LEN - 1] = '\0';
+            sv_push_message(sv, id, string);
+        }
         case PKT_USER_DISCONNECT: {
             printf("received disconnect\n");
             if (id != -1)
@@ -326,7 +365,6 @@ int main() {
         if (dt >= (1.0 / 20.0)) {
             pthread_mutex_lock(&server_mutex);
             sv_tick(&sv, dt);
-            printf("after sv_init: active=%d\n", sv.entities[0].active);
             sv_broadcast(&sv, listenfd);
             pthread_mutex_unlock(&server_mutex);
 

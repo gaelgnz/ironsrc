@@ -6,7 +6,7 @@
 
 ---
 
-## Features (not yet inplemented)
+## Features (not yet all inplemented)
 
 - Multiplayer
 - Multithreaded server
@@ -21,12 +21,14 @@
 ## To do
 
 - [ ] Handle `gm_connecting`
-- [ ] Implement `clientupdate` and `serverupdate`
-- [ ] Menu interface using `rlgui`
-- [ ] Add a `NetEntity` type — server only sends what client needs to render
+- [ ] Implement `serverupdate`
+- [x] Implement `clientupdate`
+- [ ] Menu interface using `rlgui` - up next
+- [x] Add a `NetEntity` type — server only sends what client needs to render
 - [ ] TAB menu
 - [ ] More entity types (particles, sounds, etc.)
-- [ ] Chat in server struct
+- [x] Chat in server struct
+- [ ] Be able to chat
 - [ ] Start map design — BSP or custom format
 - [ ] Map triggers
 - [ ] Model loading
@@ -49,5 +51,5 @@
 7. Server sends `ServerUpdate` (contains entities and players)
 8. Client reads `ServerUpdate` and applies it to local world
    > Client removes itself from the server's entity list to avoid duplication
-9. Client sends `UserCmd` (position and velocity)
-10. Server receives `UserCmd`, validates it, and applies if reasonable → go to 6
+9. Client sends `UserUpdate` (position and velocity)
+10. Server receives `UserUpdate`, validates it, and applies if reasonable → go to 6

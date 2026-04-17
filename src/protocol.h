@@ -6,6 +6,7 @@
 #include "stdint.h"
 #include <stddef.h>
 
+#define MAX_MSG_LEN 50
 #define NOT_CLIENT -1
 
 typedef enum PacketType {
@@ -14,7 +15,7 @@ typedef enum PacketType {
     PKT_USER_JOIN_ACK,
     PKT_USER_DISCONNECT,
     PKT_SERVER_UPDATE,
-
+    PKT_USER_MESSAGE,
 } packetType;
 
 typedef struct {
@@ -37,9 +38,17 @@ typedef struct pktUserJoinAck {
 
 typedef struct pktServerUpdate {
     NetEntity entities[256];
+
+    char chat[8192];
+
+    Entity your_player;
     int entity_count;
     uint32_t tick;
 } pktServerUpdate;
+
+typedef struct pktUserMessage {
+    char message[MAX_MSG_LEN];
+} pktUserMessage;
 
 inline void *pack_packet_typed(void *buf, int type, const void *payload,
                                size_t size);
