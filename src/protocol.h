@@ -36,10 +36,9 @@ typedef struct pktUserJoinAck {
 } pktUserJoinAck;
 
 typedef struct pktServerUpdate {
-    Entity entities[256];
+    NetEntity entities[256];
     int entity_count;
     uint32_t tick;
-
 } pktServerUpdate;
 
 inline void *pack_packet_typed(void *buf, int type, const void *payload,

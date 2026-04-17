@@ -7,6 +7,7 @@
 #include "stdio.h"
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -34,6 +35,11 @@ typedef struct IngameState {
     float yaw, pitch;
     int sockfd;
     struct sockaddr_in sv_addr;
+
+    // server state
+    NetEntity entities[256];
+    int entity_count;
+    pthread_mutex_t entity_mutex;
 } IngameState;
 
 typedef struct Global {
@@ -43,6 +49,34 @@ typedef struct Global {
         IngameState ingame;
     };
 } Global;
+typedef struct {
+    Global *global;
+} RecvArgs;
+
+void *client_recv_thread(void *arg) {
+    Global *global = ((RecvArgs *)arg)->global;
+    free(arg);
+
+    uint8_t buf[sizeof(Packet) + sizeof(pktServerUpdate)];
+
+    for (;;) {
+        int n = recv(global->ingame.sockfd, buf, sizeof(buf), 0);
+        if (n < 0)
+            continue;
+
+        Packet *pkt = (Packet *)buf;
+        if (pkt->type != PKT_SERVER_UPDATE)
+            continue;
+
+        pktServerUpdate *upd = (pktServerUpdate *)pkt->data;
+        printf("got server update: %d entities\n", upd->entity_count);
+        pthread_mutex_lock(&global->ingame.entity_mutex);
+        memcpy(global->ingame.entities, upd->entities, sizeof(upd->entities));
+        global->ingame.entity_count = upd->entity_count;
+        pthread_mutex_unlock(&global->ingame.entity_mutex);
+    }
+    return NULL;
+}
 inline void *pack_packet_typed(void *buf, int type, const void *payload,
                                size_t size) {
     Packet *pkt = (Packet *)buf;
@@ -90,7 +124,17 @@ void connect_sv(Global *global) {
 
             if (ack->accepted) {
                 printf("accepted\n");
+                pthread_mutex_init(&global->ingame.entity_mutex, NULL);
+                global->ingame.sockfd = sockfd;
+                global->ingame.sv_addr = sv_addr;
                 global->gamemode = GM_INGAME;
+                RecvArgs *rargs = malloc(sizeof(RecvArgs));
+                rargs->global = global;
+                pthread_t tid;
+                pthread_create(&tid, NULL, client_recv_thread, rargs);
+                pthread_detach(tid);
+                printf("recv thread created\n");
+                printf("recv thread created\n");
             }
         }
     }
@@ -111,13 +155,13 @@ void game_loop(Global *global) {
     if (frameTime > 0.25f)
         frameTime = 0.25f;
 
-    float speed = 5.0f;
+    float speed = 8000.0f * GetFrameTime();
 
     Vector3 forward = {sinf(state->yaw * DEG2RAD), 0,
                        cosf(state->yaw * DEG2RAD)};
 
-    Vector3 right = {cosf(state->yaw * DEG2RAD), 0,
-                     -sinf(state->yaw * DEG2RAD)};
+    Vector3 right = {-cosf(state->yaw * DEG2RAD), 0,
+                     sinf(state->yaw * DEG2RAD)};
 
     if (IsKeyDown(KEY_W))
         state->velocity = Vector3Add(state->velocity,
@@ -135,6 +179,20 @@ void game_loop(Global *global) {
         state->velocity =
             Vector3Add(state->velocity, Vector3Scale(right, speed * frameTime));
 
+    if (IsKeyDown(KEY_O)) {
+        printf("ds\n");
+
+        uint8_t disconnect_buf[sizeof(Packet)];
+        Packet *disconnect_pkt = (Packet *)disconnect_buf;
+        disconnect_pkt->type = PKT_USER_DISCONNECT;
+
+        sendto(global->ingame.sockfd, disconnect_buf, sizeof(disconnect_buf), 0,
+               (struct sockaddr *)&global->ingame.sv_addr,
+               sizeof(global->ingame.sv_addr));
+    }
+
+    if (IsKeyDown(KEY_U)) {
+    }
     state->velocity.y -= 20.0f * frameTime;
 
     if (state->position.y < 0.0f) {
@@ -157,7 +215,18 @@ void game_loop(Global *global) {
 
     float ry = state->yaw * DEG2RAD;
     float rp = state->pitch * DEG2RAD;
+    Vector2 mouseDelta = GetMouseDelta();
 
+    float sensitivity = 0.1f;
+
+    state->yaw -= mouseDelta.x * sensitivity;
+    state->pitch -= mouseDelta.y * sensitivity;
+
+    // clamp pitch so you don't flip
+    if (state->pitch > 89.0f)
+        state->pitch = 89.0f;
+    if (state->pitch < -89.0f)
+        state->pitch = -89.0f;
     Camera3D camera = {0};
     camera.position = Vector3Add(state->position, (Vector3){0, 1.0f, 0});
 
@@ -173,7 +242,20 @@ void game_loop(Global *global) {
 
     DrawCubeTexture(get_texture(&global->assets, "brick_01"),
                     (Vector3){0, -0.5f, 0}, 100.0f, 1.0f, 100.0f, WHITE);
+    // snapshot to avoid holding lock during render
+    pthread_mutex_lock(&state->entity_mutex);
+    NetEntity snapshot[256];
+    int count = state->entity_count;
+    memcpy(snapshot, state->entities, count * sizeof(NetEntity));
+    pthread_mutex_unlock(&state->entity_mutex);
 
+    BeginMode3D(camera);
+    for (int i = 0; i < count; i++) {
+        if (snapshot[i].active)
+            printf("rendering %d entities\n", count);
+        render_net_entity(&camera, &global->assets, snapshot[i]);
+    }
+    EndMode3D();
     EndMode3D();
 
     // DrawTextEx(global->font, "IRONSRC ENGINE - SERVER TICK: 60Hz",
@@ -184,6 +266,16 @@ void game_loop(Global *global) {
     pktUserUpdate user_update = {0};
     user_update.current_velocity = state->velocity;
     user_update.position = state->position;
+
+    uint8_t uu_buf[sizeof(Packet) + sizeof(pktUserUpdate)];
+    Packet *uu_pkt = (Packet *)uu_buf;
+    uu_pkt->type = PKT_USER_UPDATE;
+    pktUserUpdate *uu_data = (pktUserUpdate *)uu_pkt->data;
+    uu_data->current_velocity = global->ingame.velocity;
+    uu_data->position = global->ingame.position;
+    sendto(global->ingame.sockfd, uu_buf, sizeof(uu_buf), 0,
+           (struct sockaddr *)&global->ingame.sv_addr,
+           sizeof(global->ingame.sv_addr));
 }
 
 int main(void) {
@@ -204,6 +296,21 @@ int main(void) {
     Entity local_entities[256]; // render only
 
     while (!WindowShouldClose()) {
+        if (WindowShouldClose()) {
+            if (global.gamemode == GM_INGAME) {
+                printf("ds\n");
+
+                uint8_t disconnect_buf[sizeof(Packet)];
+                Packet *disconnect_pkt = (Packet *)disconnect_buf;
+                disconnect_pkt->type = PKT_USER_DISCONNECT;
+
+                sendto(global.ingame.sockfd, disconnect_buf,
+                       sizeof(disconnect_buf), 0,
+                       (struct sockaddr *)&global.ingame.sv_addr,
+                       sizeof(global.ingame.sv_addr));
+            }
+            break;
+        }
         switch (global.gamemode) {
         case GM_MENU:
             menu_loop(&global);

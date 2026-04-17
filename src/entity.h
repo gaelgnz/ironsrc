@@ -12,7 +12,6 @@ typedef enum EntityType {
 } EntityType;
 
 typedef struct PlayerData {
-    char username[16];
     int health;
 } PlayerData;
 
@@ -23,6 +22,18 @@ typedef struct NpcData {
 typedef struct PropData {
     int model_id; // Better than storing the full Model struct here
 } PropData;
+
+typedef struct NetEntity {
+    EntityType type;
+    Vector3 position;
+    Vector3 velocity;
+    bool active;
+    union {
+        PlayerData player;
+        NpcData npc;
+        PropData prop;
+    };
+} NetEntity;
 
 typedef struct Entity {
     int id;
