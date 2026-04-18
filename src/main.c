@@ -2,16 +2,20 @@
 #include "entity.h"
 #include "protocol.h"
 
+#include "raygui.h"
 #include "raylib.h"
 #include "raymath.h"
 #include "render.h"
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <pthread.h>
+#include <signal.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/prctl.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -49,12 +53,19 @@ typedef struct IngameState {
 
     char chat[8192];
 } IngameState;
+typedef struct MenuState {
+    bool host_menu;
+    bool connect_menu;
 
+    char ip[64];
+    char port[16];
+} MenuState;
 typedef struct Global {
     GameMode gamemode;
     Assets assets;
     union {
         IngameState ingame;
+        MenuState menu;
     };
 } Global;
 typedef struct {
@@ -155,12 +166,75 @@ void connect_sv(Global *global) {
     }
 }
 
+void host() {
+    pid_t pid = fork();
+
+    if (pid == 0) {
+        prctl(PR_SET_PDEATHSIG, SIGTERM);
+        execl("./server", "server", NULL);
+        exit(1);
+    }
+}
+
 void menu_loop(Global *global) {
+    MenuState *state = &global->menu;
 
     BeginDrawing();
     ClearBackground(GRAY);
+
+    if (GuiButton((Rectangle){24, GetScreenHeight() - 60, 120, 30},
+                  "#191#Show Message")) {
+        state->host_menu = true;
+    }
+
+    if (state->host_menu) {
+        Rectangle host_win = {50, 50, 300, 300};
+        GuiWindowBox(host_win, "Host");
+
+        if (GuiButton((Rectangle){host_win.x + 20, host_win.y + 40, 120, 30},
+                      "Start Host")) {
+            host();
+            connect_sv(global);
+        }
+
+        if (GuiButton((Rectangle){host_win.x + 20, host_win.y + 80, 120, 30},
+                      "Close")) {
+            state->host_menu = false;
+        }
+    }
+
+    if (state->connect_menu) {
+        Rectangle connect_win = {380, 50, 300, 300};
+        GuiWindowBox(connect_win, "Connect");
+
+        Rectangle ip_box = {connect_win.x + 20, connect_win.y + 40, 200, 30};
+        Rectangle port_box = {connect_win.x + 20, connect_win.y + 90, 200, 30};
+
+        GuiLabel((Rectangle){ip_box.x, ip_box.y - 20, 100, 20}, "IP:");
+        GuiTextBox(ip_box, state->ip, 64, true);
+
+        GuiLabel((Rectangle){port_box.x, port_box.y - 20, 100, 20}, "Port:");
+        GuiTextBox(port_box, state->port, 16, true);
+
+        if (GuiButton(
+                (Rectangle){connect_win.x + 20, connect_win.y + 140, 120, 30},
+                "Connect")) {
+            connect_sv(global);
+        }
+
+        if (GuiButton(
+                (Rectangle){connect_win.x + 160, connect_win.y + 140, 120, 30},
+                "Close")) {
+            state->connect_menu = false;
+        }
+    }
+
+    if (GuiButton((Rectangle){160, GetScreenHeight() - 60, 120, 30},
+                  "#191#Connect")) {
+        state->connect_menu = true;
+    }
+
     EndDrawing();
-    connect_sv(global);
 }
 
 void game_loop(Global *global) {
@@ -277,8 +351,8 @@ void game_loop(Global *global) {
     char text[64];
     snprintf(text, sizeof(text), "health: %d", state->myself.player.health);
 
-    DrawTextEx(global->ingame.default_font, text, (Vector2){20, 20}, 30, 0,
-               WHITE);
+    DrawTextEx(global->ingame.default_font, text,
+               (Vector2){20, GetScreenHeight() - 30}, 30, 0, WHITE);
 
     printf("%s\n", state->chat);
     DrawTextEx(global->ingame.default_font, global->ingame.chat,
@@ -313,8 +387,6 @@ int main(void) {
     Font font = LoadFont("assets/font.ttf");
 
     const float dt = 1.0f / 60.0f;
-
-    DisableCursor();
 
     Entity local_entities[256]; // render only
 
