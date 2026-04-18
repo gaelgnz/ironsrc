@@ -1,5 +1,6 @@
 #include "assets.h"
 #include "entity.h"
+#include "map.h"
 #include "protocol.h"
 
 #include "raygui.h"
@@ -33,6 +34,7 @@ void render_entity(Camera *camera, Assets *assets, Entity entity) {
 
 typedef enum GameMode {
     GM_MENU,
+    GM_EDITOR,
     GM_CONNECTING,
     GM_INGAME,
 } GameMode;
@@ -60,12 +62,23 @@ typedef struct MenuState {
     char ip[64];
     char port[16];
 } MenuState;
+typedef struct EditorState {
+    char map_name[20];
+    Map map;
+    Camera3D cam;
+    float yaw, pitch;
+    int selected_box; // -1 = none
+    int edit_mode;    // 0=none, 1=move, 2=resize
+    Vector3 drag_offset;
+} EditorState;
+
 typedef struct Global {
     GameMode gamemode;
     Assets assets;
     union {
         IngameState ingame;
         MenuState menu;
+        EditorState editor;
     };
 } Global;
 typedef struct {
@@ -100,13 +113,7 @@ void *client_recv_thread(void *arg) {
     }
     return NULL;
 }
-inline void *pack_packet_typed(void *buf, int type, const void *payload,
-                               size_t size) {
-    Packet *pkt = (Packet *)buf;
-    pkt->type = type;
-    memcpy(pkt->data, payload, size);
-    return buf;
-}
+
 void connect_sv(Global *global) {
     int sockfd;
     struct sockaddr_in sv_addr;
@@ -175,7 +182,236 @@ void host() {
         exit(1);
     }
 }
+void editor_init(Global *global) {
+    EditorState *s = &global->editor;
+    s->map = (Map){0};
+    s->selected_box = -1;
+    s->edit_mode = 0;
+    s->cam.position = (Vector3){0.0f, 2.0f, 4.0f};
+    s->cam.target = (Vector3){0.0f, 2.0f, 0.0f};
+    s->cam.up = (Vector3){0.0f, 1.0f, 0.0f};
+    s->cam.fovy = 60.0f;
+    s->cam.projection = CAMERA_PERSPECTIVE;
+    DisableCursor();
+}
 
+// returns index of box hit by ray, -1 if none
+static int pick_box(Map *map, Ray ray) {
+    float best = 1e30f;
+    int hit = -1;
+    for (int i = 0; i < map->box_count; i++) {
+        Box *b = &map->boxes[i];
+        BoundingBox bb = {
+            Vector3Subtract(b->position, Vector3Scale(b->size, 0.5f)),
+            Vector3Add(b->position, Vector3Scale(b->size, 0.5f)),
+        };
+        RayCollision rc = GetRayCollisionBox(ray, bb);
+        if (rc.hit && rc.distance < best) {
+            best = rc.distance;
+            hit = i;
+        }
+    }
+    return hit;
+}
+
+// snap value to 0.5 grid
+static float snap(float v) { return roundf(v * 2.0f) / 2.0f; }
+static Vector3 snap3(Vector3 v) {
+    return (Vector3){snap(v.x), snap(v.y), snap(v.z)};
+}
+
+void editor_loop(Global *global) {
+    EditorState *s = &global->editor;
+    float dt = GetFrameTime();
+    float speed = 6.0f;
+    float sensitivity = 0.003f;
+
+    Rectangle right_window =
+        (Rectangle){GetScreenWidth() - 300, 0, 300, GetScreenHeight()};
+    bool on_panel = CheckCollisionPointRec(GetMousePosition(), right_window);
+
+    // --- mouse look ---
+    Vector2 mouse = GetMouseDelta();
+    if (IsCursorHidden()) {
+        s->yaw -= mouse.x * sensitivity;
+        s->pitch -= mouse.y * sensitivity;
+    }
+    if (s->pitch > 1.5f)
+        s->pitch = 1.5f;
+    if (s->pitch < -1.5f)
+        s->pitch = -1.5f;
+
+    Vector3 forward = {cosf(s->pitch) * sinf(s->yaw), sinf(s->pitch),
+                       cosf(s->pitch) * cosf(s->yaw)};
+    Vector3 right = {sinf(s->yaw - PI / 2.f), 0, cosf(s->yaw - PI / 2.f)};
+
+    if (IsCursorHidden()) {
+        if (IsKeyDown(KEY_W))
+            s->cam.position =
+                Vector3Add(s->cam.position, Vector3Scale(forward, speed * dt));
+        if (IsKeyDown(KEY_S))
+            s->cam.position = Vector3Subtract(
+                s->cam.position, Vector3Scale(forward, speed * dt));
+        if (IsKeyDown(KEY_A))
+            s->cam.position = Vector3Subtract(s->cam.position,
+                                              Vector3Scale(right, speed * dt));
+        if (IsKeyDown(KEY_D))
+            s->cam.position =
+                Vector3Add(s->cam.position, Vector3Scale(right, speed * dt));
+        if (IsKeyDown(KEY_SPACE))
+            s->cam.position.y += speed * dt;
+        if (IsKeyDown(KEY_LEFT_SHIFT))
+            s->cam.position.y -= speed * dt;
+    }
+
+    if (IsKeyPressed(KEY_U))
+        ShowCursor();
+    if (IsKeyPressed(KEY_I))
+        DisableCursor();
+
+    s->cam.target = Vector3Add(s->cam.position, forward);
+
+    // --- box creation ---
+    if (IsKeyPressed(KEY_B) && s->map.box_count < MAX_BOXES) {
+        Vector3 spawn =
+            snap3(Vector3Add(s->cam.position, Vector3Scale(forward, 4.0f)));
+        Box b = {0};
+        b.position = spawn;
+        b.size = (Vector3){1.0f, 1.0f, 1.0f};
+        s->selected_box = s->map.box_count;
+        s->map.boxes[s->map.box_count++] = b;
+    }
+
+    // --- delete ---
+    if (IsKeyPressed(KEY_DELETE) && s->selected_box >= 0) {
+        s->map.boxes[s->selected_box] = s->map.boxes[--s->map.box_count];
+        s->selected_box = -1;
+    }
+
+    // --- picking and manipulation (cursor visible) ---
+    if (!IsCursorHidden()) {
+        Ray ray = GetScreenToWorldRay(GetMousePosition(), s->cam);
+
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !on_panel) {
+            int hit = pick_box(&s->map, ray);
+            s->selected_box = hit;
+            if (hit >= 0) {
+                RayCollision rc = GetRayCollisionBox(
+                    ray,
+                    (BoundingBox){
+                        Vector3Subtract(
+                            s->map.boxes[hit].position,
+                            Vector3Scale(s->map.boxes[hit].size, 0.5f)),
+                        Vector3Add(s->map.boxes[hit].position,
+                                   Vector3Scale(s->map.boxes[hit].size, 0.5f)),
+                    });
+                s->drag_offset =
+                    Vector3Subtract(s->map.boxes[hit].position, rc.point);
+            }
+        }
+
+        if (IsMouseButtonDown(MOUSE_LEFT_BUTTON) && s->selected_box >= 0 &&
+            !on_panel) {
+            Box *b = &s->map.boxes[s->selected_box];
+            Ray ray2 = GetScreenToWorldRay(GetMousePosition(), s->cam);
+            if (fabsf(ray2.direction.y) > 0.001f) {
+                float t = (b->position.y - ray2.position.y) / ray2.direction.y;
+                Vector3 hit_pos = snap3(
+                    Vector3Add(ray2.position, Vector3Scale(ray2.direction, t)));
+                hit_pos.y = b->position.y;
+                b->position = Vector3Add(hit_pos, s->drag_offset);
+            }
+        }
+
+        if (s->selected_box >= 0) {
+            Box *b = &s->map.boxes[s->selected_box];
+            float scroll = GetMouseWheelMove();
+            if (scroll != 0.0f && !on_panel) {
+                if (IsKeyDown(KEY_X))
+                    b->size.x = fmaxf(0.5f, snap(b->size.x + scroll * 0.5f));
+                else if (IsKeyDown(KEY_Y))
+                    b->size.y = fmaxf(0.5f, snap(b->size.y + scroll * 0.5f));
+                else
+                    b->size.z = fmaxf(0.5f, snap(b->size.z + scroll * 0.5f));
+            }
+
+            static float last_mouse_y = 0;
+            if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON) && !on_panel)
+                last_mouse_y = GetMousePosition().y;
+            if (IsMouseButtonDown(MOUSE_RIGHT_BUTTON) && !on_panel) {
+                float delta = (GetMousePosition().y - last_mouse_y) * 0.01f;
+                b->position.y = snap(b->position.y - delta);
+                last_mouse_y = GetMousePosition().y;
+            }
+        }
+    }
+
+    // --- draw ---
+    BeginDrawing();
+    ClearBackground(BLUE);
+    BeginMode3D(s->cam);
+    DrawGrid(20, 1.0f);
+    for (int i = 0; i < s->map.box_count; i++) {
+        Box *b = &s->map.boxes[i];
+        Color c = (i == s->selected_box) ? YELLOW : WHITE;
+        DrawCube(b->position, b->size.x, b->size.y, b->size.z, c);
+        DrawCubeWires(b->position, b->size.x, b->size.y, b->size.z, BLACK);
+    }
+    EndMode3D();
+
+    GuiButton((Rectangle){0, 0, 70, 20}, "New map");
+    Rectangle input_rec = (Rectangle){70, 0, 200, 20};
+    bool text_edit = CheckCollisionPointRec(GetMousePosition(), input_rec);
+    GuiTextBox(input_rec, s->map_name, sizeof(s->map_name), text_edit);
+
+    if (!IsCursorHidden()) {
+        GuiWindowBox(right_window, "Editor");
+
+        if (s->selected_box >= 0) {
+            Box *b = &s->map.boxes[s->selected_box];
+            float panel_x = GetScreenWidth() - 290;
+            float y = 30;
+            GuiLabel((Rectangle){panel_x, y, 280, 20}, "Position");
+            y += 20;
+            GuiSlider((Rectangle){panel_x, y, 200, 16}, "X", NULL,
+                      &b->position.x, -50, 50);
+            y += 20;
+            GuiSlider((Rectangle){panel_x, y, 200, 16}, "Y", NULL,
+                      &b->position.y, 0, 20);
+            y += 20;
+            GuiSlider((Rectangle){panel_x, y, 200, 16}, "Z", NULL,
+                      &b->position.z, -50, 50);
+            y += 30;
+            GuiLabel((Rectangle){panel_x, y, 280, 20}, "Size");
+            y += 20;
+            GuiSlider((Rectangle){panel_x, y, 200, 16}, "X", NULL, &b->size.x,
+                      0.5f, 20);
+            y += 20;
+            GuiSlider((Rectangle){panel_x, y, 200, 16}, "Y", NULL, &b->size.y,
+                      0.5f, 20);
+            y += 20;
+            GuiSlider((Rectangle){panel_x, y, 200, 16}, "Z", NULL, &b->size.z,
+                      0.5f, 20);
+            y += 30;
+            GuiLabel((Rectangle){panel_x, y, 280, 20},
+                     TextFormat("Box %d / %d", s->selected_box + 1,
+                                s->map.box_count));
+        } else {
+            GuiLabel((Rectangle){GetScreenWidth() - 290, 30, 280, 20},
+                     "No box selected");
+        }
+
+        GuiLabel((Rectangle){0, GetScreenHeight() - 120, 400, 20},
+                 "B: new box  Del: delete  U: show cursor  I: hide cursor");
+        GuiLabel((Rectangle){0, GetScreenHeight() - 100, 400, 20},
+                 "LMB drag: move horizontally  RMB drag: move vertically");
+        GuiLabel((Rectangle){0, GetScreenHeight() - 80, 400, 20},
+                 "Scroll: resize Z  X+Scroll: resize X  Y+Scroll: resize Y");
+    }
+
+    DrawFPS(10, 30);
+    EndDrawing();
+}
 void menu_loop(Global *global) {
     MenuState *state = &global->menu;
 
@@ -232,6 +468,11 @@ void menu_loop(Global *global) {
     if (GuiButton((Rectangle){160, GetScreenHeight() - 60, 120, 30},
                   "#191#Connect")) {
         state->connect_menu = true;
+    }
+    if (GuiButton((Rectangle){160, GetScreenHeight() - 120, 120, 30},
+                  "#191#Connect")) {
+        editor_init(global);
+        global->gamemode = GM_EDITOR;
     }
 
     EndDrawing();
@@ -412,6 +653,9 @@ int main(void) {
             break;
         case GM_INGAME:
             game_loop(&global);
+            break;
+        case GM_EDITOR:
+            editor_loop(&global);
             break;
         }
     }

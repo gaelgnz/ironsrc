@@ -12,7 +12,8 @@ typedef struct Box {
 } Box;
 
 typedef struct Map {
-    Box boxes;
+    Box boxes[MAX_BOXES];
+    int box_count;
 } Map;
 
 #endif // !MAP_H
