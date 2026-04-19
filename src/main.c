@@ -195,7 +195,6 @@ void editor_init(Global *global) {
     DisableCursor();
 }
 
-// returns index of box hit by ray, -1 if none
 static int pick_box(Map *map, Ray ray) {
     float best = 1e30f;
     int hit = -1;
@@ -214,7 +213,6 @@ static int pick_box(Map *map, Ray ray) {
     return hit;
 }
 
-// snap value to 0.5 grid
 static float snap(float v) { return roundf(v * 2.0f) / 2.0f; }
 static Vector3 snap3(Vector3 v) {
     return (Vector3){snap(v.x), snap(v.y), snap(v.z)};
