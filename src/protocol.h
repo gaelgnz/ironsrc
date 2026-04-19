@@ -50,7 +50,6 @@ typedef struct pktUserMessage {
     char message[MAX_MSG_LEN];
 } pktUserMessage;
 
-inline void *pack_packet_typed(void *buf, int type, const void *payload,
-                               size_t size);
+void *pack_packet_typed(void *buf, int type, const void *payload, size_t size);
 
 #endif
