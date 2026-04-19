@@ -2,6 +2,7 @@
 #define PROTOCOL_H
 
 #include "entity.h"
+#include "map.h"
 #include "raylib.h"
 #include "stdint.h"
 #include <stddef.h>

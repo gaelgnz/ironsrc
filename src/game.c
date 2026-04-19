@@ -1,6 +1,6 @@
-
 #include "game.h"
 #include "global.h"
+#include "map.h"
 #include "raylib.h"
 #include "raymath.h"
 #include "render.h"
@@ -89,6 +89,8 @@ void connect_sv(Global *global) {
                 global->ingame.sockfd = sockfd;
                 global->ingame.sv_addr = sv_addr;
                 global->gamemode = GM_INGAME;
+
+                global->ingame.map = load_map("map.map");
 
                 global->ingame.default_font = LoadFont("assets/fonts/font.ttf");
 

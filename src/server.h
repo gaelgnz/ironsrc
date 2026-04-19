@@ -37,6 +37,8 @@ typedef struct Server {
     pktUserUpdate last_client_updates[MAX_CLIENTS];
 
     char chat[CHAT_LEN];
+
+    Map map;
 } Server;
 
 void sv_init(Server *server);

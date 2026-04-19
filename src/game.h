@@ -23,6 +23,7 @@ typedef struct IngameState {
 
     char chat[8192];
 
+    Map *map;
 } IngameState;
 
 typedef struct Global Global;

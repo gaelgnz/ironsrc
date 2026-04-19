@@ -1,8 +1,8 @@
 #include "server.h"
 #include "entity.h"
+#include "map.h"
 #include "protocol.h"
 #include "raymath.h"
-
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <pthread.h>
@@ -166,12 +166,18 @@ void sv_receive_update(Server *server, int client_id, pktUserUpdate cmd) {
 }
 
 void sv_init(Server *server) {
+    printf("writing 0 to server\n");
     memset(server, 0, sizeof(Server));
+
+    printf("writing entity to server\n");
     Entity npc = {0};
     npc.client_id = NOT_PLAYER;
     npc.position = Vector3One();
     npc.type = ENT_NPC_GENERIC;
     npc.active = true;
+
+    printf("loading map\n");
+    load_map("map.map");
     printf("npc.active before assign: %d, true=%d\n", npc.active, (int)true);
     server->entities[0] = npc;
     printf("after assign: %d\n", server->entities[0].active);
@@ -288,7 +294,6 @@ void *recv_thread(void *arg) {
 
             pktUserJoinAck *ackd = (pktUserJoinAck *)ack->data;
             ackd->accepted = true;
-
             sendto(listenfd, ack_buf, sizeof(ack_buf), 0,
                    (struct sockaddr *)&client_addr, len);
             break;
@@ -343,12 +348,14 @@ int main() {
 
     printf("listening on %d\n", PORT);
 
-    Server sv = {0};
-    sv_init(&sv);
+    printf("0ing server..\n");
+
+    Server *sv = calloc(1, sizeof(Server));
+    sv_init(sv);
 
     RecvThreadArgs *args = malloc(sizeof(RecvThreadArgs));
     args->listenfd = listenfd;
-    args->sv = &sv;
+    args->sv = sv;
 
     pthread_t tid;
     pthread_create(&tid, NULL, recv_thread, args);
@@ -364,8 +371,8 @@ int main() {
 
         if (dt >= (1.0 / 20.0)) {
             pthread_mutex_lock(&server_mutex);
-            sv_tick(&sv, dt);
-            sv_broadcast(&sv, listenfd);
+            sv_tick(sv, dt);
+            sv_broadcast(sv, listenfd);
             pthread_mutex_unlock(&server_mutex);
 
             last = now;
@@ -373,5 +380,6 @@ int main() {
     }
 
     pthread_join(tid, NULL);
+    free(sv);
     return 0;
 }
