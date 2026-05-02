@@ -23,6 +23,8 @@ int main(void) {
     global.gamemode = GM_MENU;
     global.assets = assets_load();
 
+    global.assets.default_font = LoadFont(
+        "assets/fonts/font.ttf"); // dosent like being called in assets_load
     while (!WindowShouldClose()) {
 
         switch (global.gamemode) {

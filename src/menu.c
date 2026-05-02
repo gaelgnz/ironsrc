@@ -8,9 +8,8 @@ void menu_loop(Global *global) {
 
     BeginDrawing();
     ClearBackground(GRAY);
-
-    if (GuiButton((Rectangle){24, GetScreenHeight() - 60, 120, 30},
-                  "#191#Show Message")) {
+    // GuiSetFont(global->assets.default_font);
+    if (GuiButton((Rectangle){24, GetScreenHeight() - 60, 120, 30}, "Host")) {
         state->host_menu = true;
     }
 
@@ -57,7 +56,7 @@ void menu_loop(Global *global) {
     }
 
     if (GuiButton((Rectangle){160, GetScreenHeight() - 60, 120, 30},
-                  "#191#Connect")) {
+                  "Connect")) {
         state->connect_menu = true;
     }
 

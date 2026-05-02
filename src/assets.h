@@ -13,6 +13,7 @@ typedef struct NamedTexture {
 typedef struct Assets {
     NamedTexture textures[TEXTURES_MAX];
     int count;
+    Font default_font;
 } Assets;
 
 Assets assets_load();

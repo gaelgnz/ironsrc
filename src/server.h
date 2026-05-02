@@ -19,7 +19,7 @@
 #define CHAT_LEN 1024
 
 typedef struct Client {
-    char username[16];
+    char username[12];
     int client_id;
 
     bool active;

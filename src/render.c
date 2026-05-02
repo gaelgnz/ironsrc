@@ -3,7 +3,9 @@
 #include "entity.h"
 #include "global.h"
 #include "raylib.h"
+#include "raymath.h"
 #include "rlgl.h"
+#include "stdio.h"
 void render_net_entity(Camera *camera, Assets *assets, NetEntity entity,
                        Global *global) {
     if (!entity.active)
@@ -12,24 +14,26 @@ void render_net_entity(Camera *camera, Assets *assets, NetEntity entity,
     Vector3 pos = entity.position;
     pos.y += 0.5f;
     DrawBillboard(*camera, get_texture(assets, "player"), pos, 1.f, WHITE);
-    draw_username_billboard(camera, LoadFont(""), Vector3 world_pos,
-                            const char *name)
+    printf("drawing\n");
 }
 void draw_username_billboard(Camera3D camera, Font font, Vector3 world_pos,
                              const char *name) {
-    // offset upward so text floats above the player's head
     Vector3 above = {world_pos.x, world_pos.y + 2.2f, world_pos.z};
 
+    // Use Raylib's own matrix stack instead of GetWorldToScreen
     Vector2 screen = GetWorldToScreen(above, camera);
 
-    // measure text so we can center it
-    Vector2 size = MeasureTextEx(font, name, 18, 0);
+    // Only draw if in front of camera (z > 0 check)
+    Vector3 toCam = Vector3Subtract(camera.position, above);
+    Vector3 camDir = Vector3Subtract(camera.target, camera.position);
+    if (Vector3DotProduct(toCam, camDir) > 0)
+        return; // behind camera, skip
 
+    Vector2 size = MeasureTextEx(font, name, 18, 0);
     DrawTextEx(font, name,
                (Vector2){screen.x - size.x / 2.f, screen.y - size.y / 2.f}, 18,
                0, WHITE);
 }
-
 void DrawCubeTexture(Texture2D texture, Vector3 position, float width,
                      float height, float length, Color color) {
     float x = position.x;

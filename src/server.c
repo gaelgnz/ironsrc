@@ -124,11 +124,16 @@ void sv_join_player(Server *server, const char username[],
     e->position = (Vector3){0, 0, 0};
     e->active = true;
 
+    strncpy(e->player.username, username, sizeof(e->player.username) - 1);
     e->player.health = 67; // funniest code ever
 
     server->client_count++;
     server->entity_count++;
 
+    char message[32];
+    snprintf(message, 32, "%s joined (%d players)\n", username,
+             server->client_count);
+    strcat(server->chat, message);
     printf("%s joined (%d players)\n", username, server->client_count);
 }
 
@@ -192,30 +197,41 @@ void sv_tick(Server *server, float dt) {
         if (e->client_id != NOT_PLAYER) {
             pktUserUpdate upd = server->last_client_updates[e->client_id];
 
-            e->position = upd.position;
-            e->velocity = upd.current_velocity;
+            // Trust XZ from client only
+            e->position.x = upd.position.x;
+            e->position.z = upd.position.z;
+            e->velocity.x = upd.current_velocity.x;
+            e->velocity.z = upd.current_velocity.z;
+
+            // Allow jump: if client requests upward velocity and entity is on
+            // floor
+            if (upd.current_velocity.y < 0.0f && e->position.y <= 0.0f) {
+                e->velocity.y = upd.current_velocity.y;
+            }
         }
+
+        // Server owns Y
         e->velocity.y -= 20.0f * dt;
         e->velocity.x *= 0.8f;
         e->velocity.z *= 0.8f;
 
-        // if (e->position.y < 0.0f) {
-        //     e->position.y = 0.0f;
-        //     e->velocity.y = 0.0f;
-        // }
-        e->position.y = 0.0f;
         e->position = Vector3Add(e->position, Vector3Scale(e->velocity, dt));
+
+        // Floor collision
+        if (e->position.y < 0.0f) {
+            e->position.y = 0.0f;
+            e->velocity.y = 0.0f;
+        }
     }
+
     printf("entities: %d players: %d\n", server->entity_count,
            server->client_count);
     for (int i = 0; i < server->entity_count; i++) {
         Entity *e = &server->entities[i];
-
         printf("  entity %d: active=%d type=%d client_id=%d\n", i, e->active,
                e->type, e->client_id);
         if (!e->active)
             continue;
-        // ...
     }
     server->tick++;
 }
@@ -279,7 +295,7 @@ void *recv_thread(void *arg) {
         case PKT_USER_JOIN: {
             pktUserJoin *join = (pktUserJoin *)pkt->data;
 
-            sv_join_player(sv, join->userName, client_addr);
+            sv_join_player(sv, join->username, client_addr);
 
             int new_id = sv->client_count - 1;
             sv->clients[new_id].last_seen = get_time();

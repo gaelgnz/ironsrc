@@ -1,10 +1,12 @@
 #include "game.h"
+#include "entity.h"
 #include "global.h"
 #include "map.h"
 #include "protocol.h"
 #include "raylib.h"
 #include "raymath.h"
 #include "render.h"
+#include "server.h"
 #include "string.h"
 #include <math.h>
 #include <pthread.h>
@@ -94,8 +96,6 @@ void connect_sv(Global *global) {
                 global->gamemode = GM_INGAME;
 
                 global->ingame.map = load_map("map.map");
-
-                global->ingame.default_font = LoadFont("assets/fonts/font.ttf");
 
                 RecvArgs *rargs = malloc(sizeof(RecvArgs));
                 rargs->global = global;
@@ -216,26 +216,29 @@ void game_loop(Global *global) {
         }
         break;
     }
+    // Jump first, before physics
+    if (IsKeyPressed(KEY_SPACE) && state->position.y <= 0.0f)
+        state->velocity.y =
+            30.0f; // positive = up, and ground check prevents double jump
 
     state->velocity.y -= 20.0f * frameTime;
+
+    state->position =
+        Vector3Add(state->position, Vector3Scale(state->velocity, frameTime));
 
     if (state->position.y < 0.0f) {
         state->position.y = 0.0f;
         state->velocity.y = 0.0f;
     }
 
-    state->position =
-        Vector3Add(state->position, Vector3Scale(state->velocity, frameTime));
-
     state->velocity.x *= 0.8f;
     state->velocity.z *= 0.8f;
-
     if (IsKeyPressed(KEY_SPACE))
         state->velocity.y -= 10.0f;
 
     BeginDrawing();
 
-    ClearBackground(BLACK);
+    ClearBackground(BLUE);
     DrawFPS(10, 10);
 
     float ry = state->yaw * DEG2RAD;
@@ -264,23 +267,37 @@ void game_loop(Global *global) {
     camera.fovy = 120.0f;
     camera.projection = CAMERA_PERSPECTIVE;
 
+    printf("x: %f y: %f, z: %f", state->myself.position.x,
+           state->myself.position.y, state->myself.position.z);
     BeginMode3D(camera);
 
-    DrawCubeTexture(get_texture(&global->assets, "brick_01"),
+    DrawCubeTexture(get_texture(&global->assets, "dirt_01"),
                     (Vector3){0, -0.5f, 0}, 100.0f, 1.0f, 100.0f, WHITE);
     // snapshot to avoid holding lock during render
     pthread_mutex_lock(&state->entity_mutex);
-    NetEntity snapshot[256];
+    NetEntity snapshot[MAX_ENTITIES];
     int count = state->entity_count;
     memcpy(snapshot, state->entities, count * sizeof(NetEntity));
     pthread_mutex_unlock(&state->entity_mutex);
 
     for (int i = 0; i < count; i++) {
-
-        render_net_entity(&camera, &global->assets, snapshot[i]);
+        if (!snapshot[i].active)
+            continue; // skip inactive
+        if (snapshot[i].type != ENT_PLAYER)
+            continue;
+        render_net_entity(&camera, &global->assets, snapshot[i], global);
+        printf("%f", snapshot[i].position.y);
     }
     EndMode3D();
-
+    for (int i = 0; i < count; i++) {
+        if (!snapshot[i].active)
+            continue;
+        if (snapshot[i].type != ENT_PLAYER)
+            continue;
+        draw_username_billboard(camera, global->assets.default_font,
+                                snapshot[i].position,
+                                snapshot[i].player.username);
+    }
     char text[64];
     snprintf(text, sizeof(text), "health: %d", state->myself.player.health);
 
@@ -334,7 +351,7 @@ void game_loop(Global *global) {
             int len = end ? (int)(end - lines[i]) : (int)strlen(lines[i]);
             snprintf(line, sizeof(line), "%.*s", len, lines[i]);
             int lineY = boxY + padY + (found - 1 - i) * lineH;
-            DrawTextEx(global->ingame.default_font, line,
+            DrawTextEx(global->assets.default_font, line,
                        (Vector2){boxX + padX, lineY}, 20, 0, WHITE);
         }
 
@@ -343,7 +360,7 @@ void game_loop(Global *global) {
         DrawRectangle(boxX, inputY, boxW, inputH, (Color){30, 30, 30, 220});
         DrawRectangleLines(boxX, inputY, boxW, inputH,
                            (Color){180, 180, 180, 160});
-        DrawTextEx(global->ingame.default_font, preview,
+        DrawTextEx(global->assets.default_font, preview,
                    (Vector2){boxX + padX, inputY + padY}, fontSize, 0, WHITE);
     } else {
         const char *chat = global->ingame.chat;
@@ -363,7 +380,7 @@ void game_loop(Global *global) {
             const char *end = strchr(lines[i], '\n');
             int len = end ? (int)(end - lines[i]) : (int)strlen(lines[i]);
             snprintf(line, sizeof(line), "%.*s", len, lines[i]);
-            DrawTextEx(global->ingame.default_font, line,
+            DrawTextEx(global->assets.default_font, line,
                        (Vector2){20, sh - 120 + (found - 1 - i) * 26}, 20, 0,
                        (Color){255, 255, 255, 180});
         }

@@ -20,16 +20,15 @@
 
 ## To do
 
-- [ ] Handle `gm_connecting`
-- [ ] Implement `serverupdate`
+- [x] Implement `serverupdate`
 - [x] Implement `clientupdate`
-- [ ] Menu interface using `rlgui` - up next
+- [x] Menu interface using `rlgui` - up next
 - [x] Add a `NetEntity` type — server only sends what client needs to render
 - [ ] TAB menu
 - [ ] More entity types (particles, sounds, etc.)
 - [x] Chat in server struct
-- [ ] Be able to chat
-- [ ] Start map design — BSP or custom format
+- [x] Be able to chat
+- [next] Start map design — BSP or custom format
 - [ ] Map triggers
 - [ ] Model loading
 
