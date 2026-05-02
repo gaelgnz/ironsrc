@@ -9,7 +9,7 @@
 
 #define MAX_MSG_LEN 32
 #define NOT_CLIENT -1
-
+#define MAX_USERNAME_LEN 12
 typedef enum PacketType {
     PKT_USER_UPDATE,
     PKT_USER_JOIN,
@@ -30,7 +30,7 @@ typedef struct pktUserUpdate {
 } pktUserUpdate;
 
 typedef struct pktUserJoin {
-    char userName[12];
+    char username[12];
 } pktUserJoin;
 
 typedef struct pktUserJoinAck {

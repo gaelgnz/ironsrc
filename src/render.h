@@ -3,10 +3,14 @@
 
 #include "assets.h"
 #include "entity.h"
+#include "global.h"
 #include "raylib.h"
 void DrawCubeTextureRec(Texture2D texture, Rectangle source, Vector3 position,
                         float width, float height, float length, Color color);
 void DrawCubeTexture(Texture2D texture, Vector3 position, float width,
                      float height, float length, Color color);
-void render_net_entity(Camera *camera, Assets *assets, NetEntity entity);
+void render_net_entity(Camera *camera, Assets *assets, NetEntity entity,
+                       Global *global);
+void draw_username_billboard(Camera3D camera, Font font, Vector3 world_pos,
+                             const char *name);
 #endif

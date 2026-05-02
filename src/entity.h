@@ -12,6 +12,7 @@ typedef enum EntityType {
 } EntityType;
 
 typedef struct PlayerData {
+    char username[12];
     int health;
 } PlayerData;
 

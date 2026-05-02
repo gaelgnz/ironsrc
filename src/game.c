@@ -62,7 +62,7 @@ void connect_sv(Global *global) {
     uint8_t buf[sizeof(Packet) + sizeof(pktUserJoin)];
 
     pktUserJoin user_join = {0};
-    strcpy(user_join.userName, "gael");
+    strcpy(user_join.username, "gael");
 
     pack_packet_typed(buf, PKT_USER_JOIN, &user_join, sizeof(user_join));
 
@@ -286,15 +286,88 @@ void game_loop(Global *global) {
 
     char preview[32];
     snprintf(preview, sizeof(preview), "gael: %s", state->message);
-    DrawTextEx(global->ingame.default_font, text,
-               (Vector2){20, GetScreenHeight() - 30}, 50, 0, WHITE);
+    int sw = GetScreenWidth();
+    int sh = GetScreenHeight();
+    const char *chat = global->ingame.chat;
+    const char *lines[3] = {NULL, NULL, NULL};
+    const char *p = chat + strlen(chat);
+    int found = 0;
+    while (p > chat && found < 3) {
+        p--;
+        if (*p == '\n') {
+            lines[found++] = p + 1;
+        }
+    }
+    if (found < 3)
+        lines[found++] = chat;
 
-    DrawTextEx(global->ingame.default_font, global->ingame.chat,
-               (Vector2){20, GetScreenHeight() / 2.f}, 30, 0, WHITE);
+    if (state->input_state == IS_CHAT) {
+        int fontSize = 22;
+        int padX = 10;
+        int padY = 8;
+        int lineH = 26;
+        int maxLines = 5;
+        int boxW = sw / 2;
+        int boxX = 20;
+        int inputH = fontSize + padY * 2;
+        int chatAreaH = lineH * maxLines + padY;
+        int totalH = chatAreaH + inputH + 4;
+        int boxY = sh - totalH - 20;
 
-    DrawTextEx(global->ingame.default_font, preview,
-               (Vector2){20, GetScreenHeight() / 2.f + 30.f}, 30, 0, RED);
+        DrawRectangle(boxX, boxY, boxW, totalH, (Color){0, 0, 0, 160});
 
+        const char *chat = global->ingame.chat;
+        const char *lines[5] = {0};
+        int found = 0;
+        const char *p = chat + strlen(chat);
+        while (p > chat && found < maxLines) {
+            p--;
+            if (*p == '\n')
+                lines[found++] = p + 1;
+        }
+        if (found < maxLines)
+            lines[found++] = chat;
+
+        for (int i = found - 1; i >= 0; i--) {
+            char line[128];
+            const char *end = strchr(lines[i], '\n');
+            int len = end ? (int)(end - lines[i]) : (int)strlen(lines[i]);
+            snprintf(line, sizeof(line), "%.*s", len, lines[i]);
+            int lineY = boxY + padY + (found - 1 - i) * lineH;
+            DrawTextEx(global->ingame.default_font, line,
+                       (Vector2){boxX + padX, lineY}, 20, 0, WHITE);
+        }
+
+        // input row at the bottom of the panel
+        int inputY = boxY + chatAreaH + 4;
+        DrawRectangle(boxX, inputY, boxW, inputH, (Color){30, 30, 30, 220});
+        DrawRectangleLines(boxX, inputY, boxW, inputH,
+                           (Color){180, 180, 180, 160});
+        DrawTextEx(global->ingame.default_font, preview,
+                   (Vector2){boxX + padX, inputY + padY}, fontSize, 0, WHITE);
+    } else {
+        const char *chat = global->ingame.chat;
+        const char *lines[3] = {0};
+        int found = 0;
+        const char *p = chat + strlen(chat);
+        while (p > chat && found < 3) {
+            p--;
+            if (*p == '\n')
+                lines[found++] = p + 1;
+        }
+        if (found < 3)
+            lines[found++] = chat;
+
+        for (int i = found - 1; i >= 0; i--) {
+            char line[128];
+            const char *end = strchr(lines[i], '\n');
+            int len = end ? (int)(end - lines[i]) : (int)strlen(lines[i]);
+            snprintf(line, sizeof(line), "%.*s", len, lines[i]);
+            DrawTextEx(global->ingame.default_font, line,
+                       (Vector2){20, sh - 120 + (found - 1 - i) * 26}, 20, 0,
+                       (Color){255, 255, 255, 180});
+        }
+    }
     EndDrawing();
 
     pktUserUpdate user_update = {0};
