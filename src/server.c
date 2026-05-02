@@ -49,9 +49,8 @@ void sv_broadcast(Server *server, int listenfd) {
         }
         upd->entity_count = 0;
 
-        // strcpy(upd->chat, server->chat);
+        strcpy(upd->chat, server->chat);
 
-        strcpy(upd->chat, "gael: yogurt");
         for (int i = 0; i < server->entity_count; i++) {
             Entity *e = &server->entities[i];
             if (!e->active)
@@ -200,11 +199,11 @@ void sv_tick(Server *server, float dt) {
         e->velocity.x *= 0.8f;
         e->velocity.z *= 0.8f;
 
-        if (e->position.y < 0.0f) {
-            e->position.y = 0.0f;
-            e->velocity.y = 0.0f;
-        }
-
+        // if (e->position.y < 0.0f) {
+        //     e->position.y = 0.0f;
+        //     e->velocity.y = 0.0f;
+        // }
+        e->position.y = 0.0f;
         e->position = Vector3Add(e->position, Vector3Scale(e->velocity, dt));
     }
     printf("entities: %d players: %d\n", server->entity_count,
@@ -220,14 +219,11 @@ void sv_tick(Server *server, float dt) {
     }
     server->tick++;
 }
-
 void sv_push_message(Server *sv, int client_id, char *message) {
-    char *result = strcat(sv->clients[client_id].username, ":");
-
-    strcat(result, message);
-
-    strcat(sv->chat, result);
-
+    char line[128];
+    snprintf(line, sizeof(line), "%s: %s\n", sv->clients[client_id].username,
+             message);
+    strncat(sv->chat, line, sizeof(sv->chat) - strlen(sv->chat) - 1);
     printf("%s", sv->chat);
 }
 
@@ -277,7 +273,7 @@ void *recv_thread(void *arg) {
         Packet *pkt = (Packet *)buf;
 
         int id = sv_find_client(sv, client_addr);
-
+        printf("received pkt type: %d from client %d\n", pkt->type, id);
         switch (pkt->type) {
 
         case PKT_USER_JOIN: {
@@ -318,6 +314,8 @@ void *recv_thread(void *arg) {
             strncpy(string, msg->message, MAX_MSG_LEN - 1);
             string[MAX_MSG_LEN - 1] = '\0';
             sv_push_message(sv, id, string);
+            printf("recieved message\n\n");
+            break;
         }
         case PKT_USER_DISCONNECT: {
             printf("received disconnect\n");

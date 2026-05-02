@@ -17,6 +17,8 @@ int main(void) {
     InitWindow(800, 600, "IronSrc test");
     SetTargetFPS(60);
 
+    SetExitKey(-1);
+
     Global global = {0};
     global.gamemode = GM_MENU;
     global.assets = assets_load();

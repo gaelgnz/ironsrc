@@ -7,7 +7,7 @@
 #include "stdint.h"
 #include <stddef.h>
 
-#define MAX_MSG_LEN 50
+#define MAX_MSG_LEN 32
 #define NOT_CLIENT -1
 
 typedef enum PacketType {

@@ -7,7 +7,16 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
+typedef enum InputState {
+    IS_CHAT,
+    IS_MOVING,
+} InputState;
+
 typedef struct IngameState {
+    InputState input_state;
+    char message[32];
+    int message_len;
+
     Vector3 position, velocity;
     float yaw, pitch;
     int sockfd;
@@ -21,7 +30,7 @@ typedef struct IngameState {
     Font default_font; // this is temporary, fonts will be added to assets.c
     Entity myself;     // entity from server containing the local player
 
-    char chat[8192];
+    char chat[2048];
 
     Map *map;
 } IngameState;

@@ -1,6 +1,7 @@
 #include "game.h"
 #include "global.h"
 #include "map.h"
+#include "protocol.h"
 #include "raylib.h"
 #include "raymath.h"
 #include "render.h"
@@ -32,7 +33,6 @@ void *client_recv_thread(void *arg) {
             continue;
 
         pktServerUpdate *upd = (pktServerUpdate *)pkt->data;
-        printf("got server update: %d entities\n", upd->entity_count);
         pthread_mutex_lock(&global->ingame.entity_mutex);
 
         memcpy(global->ingame.entities, upd->entities, sizeof(upd->entities));
@@ -88,6 +88,9 @@ void connect_sv(Global *global) {
                 pthread_mutex_init(&global->ingame.entity_mutex, NULL);
                 global->ingame.sockfd = sockfd;
                 global->ingame.sv_addr = sv_addr;
+                global->ingame.input_state = IS_MOVING;
+                global->ingame.message_len = 0;
+                strcpy(global->ingame.message, "ess");
                 global->gamemode = GM_INGAME;
 
                 global->ingame.map = load_map("map.map");
@@ -115,6 +118,7 @@ void host() {
         exit(1);
     }
 }
+
 void game_loop(Global *global) {
     IngameState *state = &global->ingame;
 
@@ -130,40 +134,89 @@ void game_loop(Global *global) {
     Vector3 right = {-cosf(state->yaw * DEG2RAD), 0,
                      sinf(state->yaw * DEG2RAD)};
 
-    if (IsKeyDown(KEY_W))
-        state->velocity = Vector3Add(state->velocity,
-                                     Vector3Scale(forward, speed * frameTime));
+    switch (state->input_state) {
+    case IS_CHAT:
+        if (IsKeyPressed(KEY_ESCAPE)) {
+            state->input_state = IS_MOVING;
+            break;
+        }
+        if (IsKeyPressed(KEY_BACKSPACE)) {
+            if (state->message_len > 0) {
+                state->message_len--;
+                state->message[state->message_len] =
+                    '\0'; // null AFTER decrement
+            }
+            break;
+        }
+        int character = GetCharPressed();
+        if (character > 0 && state->message_len < 32 - 1) {
+            state->message[state->message_len] = (char)character;
+            state->message_len++;
+            state->message[state->message_len] = '\0'; // keep null-terminated
+        }
+        printf("%s\n", state->message);
 
-    if (IsKeyDown(KEY_S))
-        state->velocity = Vector3Add(state->velocity,
-                                     Vector3Scale(forward, -speed * frameTime));
+        if (IsKeyPressed(KEY_ENTER)) {
+            state->input_state = IS_MOVING;
+            uint8_t um_buf[sizeof(Packet) + sizeof(pktUserMessage)];
+            Packet *um_pkt = (Packet *)um_buf;
+            um_pkt->type = PKT_USER_MESSAGE;
+            pktUserMessage *um_data = (pktUserMessage *)um_pkt->data;
+            memcpy(um_data->message, global->ingame.message, sizeof(char[32]));
 
-    if (IsKeyDown(KEY_A))
-        state->velocity = Vector3Add(state->velocity,
-                                     Vector3Scale(right, -speed * frameTime));
+            int sent = sendto(global->ingame.sockfd, um_buf, sizeof(um_buf), 0,
+                              (struct sockaddr *)&global->ingame.sv_addr,
+                              sizeof(global->ingame.sv_addr));
+            printf("sendto returned: %d\n", sent);
 
-    if (IsKeyDown(KEY_D))
-        state->velocity =
-            Vector3Add(state->velocity, Vector3Scale(right, speed * frameTime));
+            state->message[0] = '\0';
+            state->message_len = 0;
+        }
 
-    if (IsKeyDown(KEY_O)) {
-        printf("ds\n");
+        break;
+    case IS_MOVING:
 
-        uint8_t disconnect_buf[sizeof(Packet)];
-        Packet *disconnect_pkt = (Packet *)disconnect_buf;
-        disconnect_pkt->type = PKT_USER_DISCONNECT;
+        if (IsKeyPressed(KEY_T)) {
+            state->input_state = IS_CHAT;
+        }
+        if (IsKeyDown(KEY_W))
+            state->velocity = Vector3Add(
+                state->velocity, Vector3Scale(forward, speed * frameTime));
 
-        sendto(global->ingame.sockfd, disconnect_buf, sizeof(disconnect_buf), 0,
-               (struct sockaddr *)&global->ingame.sv_addr,
-               sizeof(global->ingame.sv_addr));
+        if (IsKeyDown(KEY_S))
+            state->velocity = Vector3Add(
+                state->velocity, Vector3Scale(forward, -speed * frameTime));
+
+        if (IsKeyDown(KEY_A))
+            state->velocity = Vector3Add(
+                state->velocity, Vector3Scale(right, -speed * frameTime));
+
+        if (IsKeyDown(KEY_D))
+            state->velocity = Vector3Add(
+                state->velocity, Vector3Scale(right, speed * frameTime));
+
+        // if (IsKeyDown(KEY_O)) {
+        //     printf("ds\n");
+
+        //     uint8_t disconnect_buf[sizeof(Packet)];
+        //     Packet *disconnect_pkt = (Packet *)disconnect_buf;
+        //     disconnect_pkt->type = PKT_USER_DISCONNECT;
+
+        //     sendto(global->ingame.sockfd, disconnect_buf,
+        //            sizeof(disconnect_buf), 0,
+        //            (struct sockaddr *)&global->ingame.sv_addr,
+        //            sizeof(global->ingame.sv_addr));
+        // }
+
+        if (IsKeyDown(KEY_U)) {
+            ShowCursor();
+        }
+        if (IsKeyDown(KEY_I)) {
+            DisableCursor();
+        }
+        break;
     }
 
-    if (IsKeyDown(KEY_U)) {
-        ShowCursor();
-    }
-    if (IsKeyDown(KEY_I)) {
-        DisableCursor();
-    }
     state->velocity.y -= 20.0f * frameTime;
 
     if (state->position.y < 0.0f) {
@@ -181,7 +234,8 @@ void game_loop(Global *global) {
         state->velocity.y -= 10.0f;
 
     BeginDrawing();
-    ClearBackground(BLUE);
+
+    ClearBackground(BLACK);
     DrawFPS(10, 10);
 
     float ry = state->yaw * DEG2RAD;
@@ -190,9 +244,10 @@ void game_loop(Global *global) {
 
     float sensitivity = 0.1f;
 
-    state->yaw -= mouseDelta.x * sensitivity;
-    state->pitch -= mouseDelta.y * sensitivity;
-
+    if (state->input_state == IS_MOVING) {
+        state->yaw -= mouseDelta.x * sensitivity;
+        state->pitch -= mouseDelta.y * sensitivity;
+    }
     // clamp pitch so you don't flip
     if (state->pitch > 89.0f)
         state->pitch = 89.0f;
@@ -229,12 +284,16 @@ void game_loop(Global *global) {
     char text[64];
     snprintf(text, sizeof(text), "health: %d", state->myself.player.health);
 
+    char preview[32];
+    snprintf(preview, sizeof(preview), "gael: %s", state->message);
     DrawTextEx(global->ingame.default_font, text,
-               (Vector2){20, GetScreenHeight() - 30}, 30, 0, WHITE);
+               (Vector2){20, GetScreenHeight() - 30}, 50, 0, WHITE);
 
-    printf("%s\n", state->chat);
     DrawTextEx(global->ingame.default_font, global->ingame.chat,
-               (Vector2){20, GetScreenHeight() / 2.f}, 10, 0, WHITE);
+               (Vector2){20, GetScreenHeight() / 2.f}, 30, 0, WHITE);
+
+    DrawTextEx(global->ingame.default_font, preview,
+               (Vector2){20, GetScreenHeight() / 2.f + 30.f}, 30, 0, RED);
 
     EndDrawing();
 
