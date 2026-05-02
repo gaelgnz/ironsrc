@@ -35,6 +35,7 @@ typedef struct Server {
     Client clients[MAX_CLIENTS];
     int client_count;
     pktUserUpdate last_client_updates[MAX_CLIENTS];
+    uint8_t jump_pending[MAX_CLIENTS];
 
     char chat[CHAT_LEN];
 

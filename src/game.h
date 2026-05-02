@@ -27,12 +27,19 @@ typedef struct IngameState {
     int entity_count;
     pthread_mutex_t entity_mutex;
 
-    Font default_font; // this is temporary, fonts will be added to assets.c
-    Entity myself;     // entity from server containing the local player
+    Font default_font;
+    Entity myself;
 
     char chat[2048];
 
     Map *map;
+
+    // audio
+    Sound chat_sound;
+    int chat_sound_loaded;
+
+    // crouch state
+    int crouching;
 } IngameState;
 
 typedef struct Global Global;

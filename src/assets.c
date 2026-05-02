@@ -33,18 +33,12 @@ Assets assets_load() {
             printf("%d", assets.count);
         }
     }
-    for (int i = 0; i < assets.count; i++)
-        printf("loaded: '%s'\n", assets.textures[i].name);
-
     UnloadDirectoryFiles(files);
     return assets;
 }
 
 Texture2D get_texture(Assets *assets, const char *name) {
-    printf("cwd: %s | looking for: %s | count: %d\n", GetWorkingDirectory(),
-           name, assets->count);
     for (int i = 0; i < assets->count; i++) {
-        printf("%s", assets->textures[i].name);
         if (strcmp(assets->textures[i].name, name) == 0) {
             return assets->textures[i].texture;
         }

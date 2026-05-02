@@ -39,7 +39,6 @@ void sv_broadcast(Server *server, int listenfd) {
     upd->tick = server->tick;
 
     for (int c = 0; c < server->client_count; c++) {
-        printf("broadcasting %d entities to client %d\n", upd->entity_count, c);
         Entity *me = entity_from_client_id(server, c);
 
         if (me) {
@@ -165,26 +164,22 @@ void sv_delete_player(Server *server, int client_id) {
 }
 
 void sv_receive_update(Server *server, int client_id, pktUserUpdate cmd) {
-
+    if (cmd.jump_requested)
+        server->jump_pending[client_id] = 1;
     server->last_client_updates[client_id] = cmd;
 }
 
 void sv_init(Server *server) {
-    printf("writing 0 to server\n");
     memset(server, 0, sizeof(Server));
 
-    printf("writing entity to server\n");
     Entity npc = {0};
     npc.client_id = NOT_PLAYER;
     npc.position = Vector3One();
     npc.type = ENT_NPC_GENERIC;
     npc.active = true;
 
-    printf("loading map\n");
     load_map("map.map");
-    printf("npc.active before assign: %d, true=%d\n", npc.active, (int)true);
     server->entities[0] = npc;
-    printf("after assign: %d\n", server->entities[0].active);
     server->entity_count = 1;
 }
 
@@ -197,16 +192,16 @@ void sv_tick(Server *server, float dt) {
         if (e->client_id != NOT_PLAYER) {
             pktUserUpdate upd = server->last_client_updates[e->client_id];
 
-            // Trust XZ from client only
+            // Trust XZ from client only, never Y
             e->position.x = upd.position.x;
             e->position.z = upd.position.z;
             e->velocity.x = upd.current_velocity.x;
             e->velocity.z = upd.current_velocity.z;
 
-            // Allow jump: if client requests upward velocity and entity is on
-            // floor
-            if (upd.current_velocity.y < 0.0f && e->position.y <= 0.0f) {
-                e->velocity.y = upd.current_velocity.y;
+            // Allow jump: client explicitly requested it and entity is on floor
+            if (server->jump_pending[e->client_id] && e->position.y <= 0.0f) {
+                e->velocity.y = 5.0f;
+                server->jump_pending[e->client_id] = 0;
             }
         }
 
@@ -223,16 +218,6 @@ void sv_tick(Server *server, float dt) {
             e->velocity.y = 0.0f;
         }
     }
-
-    printf("entities: %d players: %d\n", server->entity_count,
-           server->client_count);
-    for (int i = 0; i < server->entity_count; i++) {
-        Entity *e = &server->entities[i];
-        printf("  entity %d: active=%d type=%d client_id=%d\n", i, e->active,
-               e->type, e->client_id);
-        if (!e->active)
-            continue;
-    }
     server->tick++;
 }
 void sv_push_message(Server *sv, int client_id, char *message) {
@@ -240,7 +225,6 @@ void sv_push_message(Server *sv, int client_id, char *message) {
     snprintf(line, sizeof(line), "%s: %s\n", sv->clients[client_id].username,
              message);
     strncat(sv->chat, line, sizeof(sv->chat) - strlen(sv->chat) - 1);
-    printf("%s", sv->chat);
 }
 
 typedef struct RecvThreadArgs {
@@ -289,7 +273,6 @@ void *recv_thread(void *arg) {
         Packet *pkt = (Packet *)buf;
 
         int id = sv_find_client(sv, client_addr);
-        printf("received pkt type: %d from client %d\n", pkt->type, id);
         switch (pkt->type) {
 
         case PKT_USER_JOIN: {

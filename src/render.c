@@ -14,7 +14,6 @@ void render_net_entity(Camera *camera, Assets *assets, NetEntity entity,
     Vector3 pos = entity.position;
     pos.y += 0.5f;
     DrawBillboard(*camera, get_texture(assets, "player"), pos, 1.f, WHITE);
-    printf("drawing\n");
 }
 void draw_username_billboard(Camera3D camera, Font font, Vector3 world_pos,
                              const char *name) {

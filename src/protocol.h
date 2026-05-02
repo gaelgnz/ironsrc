@@ -27,6 +27,7 @@ typedef struct {
 typedef struct pktUserUpdate {
     Vector3 position;
     Vector3 current_velocity;
+    uint8_t jump_requested;
 } pktUserUpdate;
 
 typedef struct pktUserJoin {
