@@ -412,8 +412,8 @@ void game_loop(Global *global) {
         Vector3Add(state->position, Vector3Scale(state->velocity, frameTime));
 
     if (state->map) {
-        apply_sector_floor(&state->position, &state->velocity, state->map,
-                           STEP_HEIGHT);
+        apply_sector_collision(&state->position, &state->velocity, state->map,
+                               STEP_HEIGHT);
     }
 
     if (state->position.y < 0.0f) {

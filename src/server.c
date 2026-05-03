@@ -226,8 +226,8 @@ void sv_tick(Server *server, float dt) {
         e->position = Vector3Add(e->position, Vector3Scale(e->velocity, dt));
 
         // Floor collision
-        apply_sector_floor(&e->position, &e->velocity,
-                           &server->map, STEP_HEIGHT);
+        apply_sector_collision(&e->position, &e->velocity,
+                               &server->map, STEP_HEIGHT);
         if (e->position.y < 0.0f) {
             e->position.y = 0.0f;
             e->velocity.y = 0.0f;

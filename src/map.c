@@ -1,4 +1,5 @@
 #include "map.h"
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -48,11 +49,11 @@ int is_on_sector_floor(Vector3 position, Map *map, float step_height) {
     if (!sector)
         return 0;
     float dy = sector->floor_height - position.y;
-    return dy >= 0 && dy <= step_height;
+    return dy >= -step_height && dy <= step_height;
 }
 
-void apply_sector_floor(Vector3 *position, Vector3 *velocity, Map *map,
-                        float step_height) {
+void apply_sector_collision(Vector3 *position, Vector3 *velocity, Map *map,
+                            float step_height) {
     Sector *sector = get_sector_at(map, *position);
     if (!sector)
         return;
@@ -61,10 +62,39 @@ void apply_sector_floor(Vector3 *position, Vector3 *velocity, Map *map,
     float dy = floor_y - position->y;
 
     if (dy > 0 && dy <= step_height) {
+        // Below floor, within step height → step up (stairs)
+        position->y = floor_y;
+        velocity->y = 0;
+    } else if (dy < 0 && dy >= -step_height && velocity->y <= 0) {
+        // Above floor, within step height, moving down → land on floor
         position->y = floor_y;
         velocity->y = 0;
     } else if (position->y < floor_y) {
-        position->y = floor_y;
-        velocity->y = 0;
+        // Below floor and NOT within step range → collide horizontally
+        // Push player out of sector bounds
+        float cx = sector->x + sector->width / 2.0f;
+        float cz = sector->y + sector->height / 2.0f;
+        float dx = position->x - cx;
+        float dz = position->z - cz;
+
+        // Find closest edge
+        float half_w = sector->width / 2.0f;
+        float half_h = sector->height / 2.0f;
+
+        if (fabsf(dx) / half_w > fabsf(dz) / half_h) {
+            // Push out on X axis
+            if (dx > 0)
+                position->x = sector->x + sector->width + 0.1f;
+            else
+                position->x = sector->x - 0.1f;
+            velocity->x = 0;
+        } else {
+            // Push out on Z axis
+            if (dz > 0)
+                position->z = sector->y + sector->height + 0.1f;
+            else
+                position->z = sector->y - 0.1f;
+            velocity->z = 0;
+        }
     }
 }

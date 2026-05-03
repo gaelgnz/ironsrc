@@ -26,7 +26,7 @@ Map *load_map(const char *file_path);
 
 Sector *get_sector_at(Map *map, Vector3 pos);
 int is_on_sector_floor(Vector3 position, Map *map, float step_height);
-void apply_sector_floor(Vector3 *position, Vector3 *velocity, Map *map,
-                        float step_height);
+void apply_sector_collision(Vector3 *position, Vector3 *velocity, Map *map,
+                            float step_height);
 
 #endif // !MAP_H
