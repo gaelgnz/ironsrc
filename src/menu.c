@@ -76,5 +76,10 @@ void menu_loop(Global *global) {
         state->connect_menu = true;
     }
 
+    if (GuiButton((Rectangle){296, GetScreenHeight() - 60, 120, 30},
+                  "Map Editor")) {
+        global->gamemode = GM_MAPEDITOR;
+    }
+
     EndDrawing();
 }

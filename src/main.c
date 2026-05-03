@@ -1,6 +1,7 @@
 #include "assets.h"
 #include "game.h"
 #include "global.h"
+#include "map_editor.h"
 #include "menu.h"
 #include "raygui.h"
 #include "raylib.h"
@@ -26,6 +27,7 @@ int main(void) {
     strcpy(global.menu.ip, "127.0.0.1");
     sprintf(global.menu.port, "%d", 4445);
     global.assets = assets_load();
+    strcpy(global.editor.filename, "map.dat");
 
     global.assets.default_font = LoadFont(
         "assets/fonts/font.ttf"); // dosent like being called in assets_load
@@ -37,6 +39,9 @@ int main(void) {
             break;
         case GM_INGAME:
             game_loop(&global);
+            break;
+        case GM_MAPEDITOR:
+            map_editor_loop(&global);
             break;
         }
     }
