@@ -237,3 +237,26 @@ void DrawCubeTextureRec(Texture2D texture, Rectangle source, Vector3 position,
 
     rlSetTexture(0);
 }
+
+void draw_map(Map *map, Assets *assets) {
+    for (int i = 0; i < map->sector_count; i++) {
+        Sector *s = &map->sectors[i];
+        Texture2D tex = get_texture(assets, s->texture);
+        if (tex.id == 0)
+            tex = get_texture(assets, "dirt_01");
+
+        Vector3 pos = {s->x + s->width / 2.0f, s->floor_height,
+                       s->y + s->height / 2.0f};
+        DrawCubeTexture(tex, pos, s->width, s->ceiling_height - s->floor_height,
+                      s->height, WHITE);
+
+        // Draw ceiling if enabled
+        if (s->ceiling_enabled) {
+            Vector3 ceil_pos = {s->x + s->width / 2.0f,
+                                 s->ceiling_height,
+                                 s->y + s->height / 2.0f};
+            DrawCubeTexture(tex, ceil_pos, s->width, 0.1f, s->height,
+                           WHITE);
+        }
+    }
+}

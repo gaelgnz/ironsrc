@@ -13,9 +13,8 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/prctl.h>
 #include <unistd.h>
-
+#include <sys/prctl.h>
 #define GROUND_ACCEL 10.0f
 #define AIR_ACCEL 2.0f
 #define MAX_SPEED 10.0f
@@ -127,6 +126,9 @@ void connect_sv(Global *global) {
     global->gamemode = GM_INGAME;
     global->ingame.crouching = 0;
 
+    // Load map
+    global->ingame.map = load_map("map.dat");
+
     if (FileExists("chat.wav")) {
         InitAudioDevice();
         global->ingame.chat_sound = LoadSound("chat.wav");
@@ -148,13 +150,16 @@ void host() {
 
     if (pid == 0) {
         prctl(PR_SET_PDEATHSIG, SIGTERM);
+        // Redirect output to /dev/null to avoid interfering with parent
+        freopen("/dev/null", "w", stdout);
+        freopen("/dev/null", "w", stderr);
         // Try current directory first, then try absolute path
         execl("./server", "server", (char *)NULL);
         execl("/home/gael/c/ironsrc/server", "server", (char *)NULL);
-        perror("execl failed");
-        exit(1);
+        _exit(1);
     }
-    usleep(500000); // wait 500ms for server to start
+    // Wait for server to start
+    usleep(500000); // 500ms
 }
 
 static void apply_acceleration(Vector3 *velocity, Vector3 wishdir,
@@ -355,8 +360,11 @@ void game_loop(Global *global) {
     camera.projection = CAMERA_PERSPECTIVE;
 
     BeginMode3D(camera);
-    DrawCubeTexture(get_texture(&global->assets, "dirt_01"),
-                    (Vector3){0, -0.5f, 0}, 100.0f, 1.0f, 100.0f, WHITE);
+    if (state->map)
+        draw_map(state->map, &global->assets);
+    else
+        DrawCubeTexture(get_texture(&global->assets, "dirt_01"),
+                      (Vector3){0, -0.5f, 0}, 100.0f, 1.0f, 100.0f, WHITE);
 
     pthread_mutex_lock(&state->entity_mutex);
     NetEntity snapshot[MAX_ENTITIES];
