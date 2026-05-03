@@ -79,8 +79,10 @@ void connect_sv(Global *global) {
     bzero(&sv_addr, sizeof(struct sockaddr_in));
 
     sv_addr.sin_family = AF_INET;
-    sv_addr.sin_port = htons(4445);
-    inet_pton(AF_INET, "127.0.0.1", &sv_addr.sin_addr);
+    int port = global->menu.port[0] ? atoi(global->menu.port) : 4445;
+    sv_addr.sin_port = htons(port);
+    const char *ip = global->menu.ip[0] ? global->menu.ip : "127.0.0.1";
+    inet_pton(AF_INET, ip, &sv_addr.sin_addr);
 
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
 
@@ -146,9 +148,13 @@ void host() {
 
     if (pid == 0) {
         prctl(PR_SET_PDEATHSIG, SIGTERM);
-        execl("./server", "server", NULL);
+        // Try current directory first, then try absolute path
+        execl("./server", "server", (char *)NULL);
+        execl("/home/gael/c/ironsrc/server", "server", (char *)NULL);
+        perror("execl failed");
         exit(1);
     }
+    usleep(500000); // wait 500ms for server to start
 }
 
 static void apply_acceleration(Vector3 *velocity, Vector3 wishdir,

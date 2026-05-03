@@ -3,6 +3,7 @@
 #include "global.h"
 #include "raygui.h"
 #include "raylib.h"
+#include <stdio.h>
 void menu_loop(Global *global) {
     MenuState *state = &global->menu;
 
@@ -37,10 +38,25 @@ void menu_loop(Global *global) {
         Rectangle port_box = {connect_win.x + 20, connect_win.y + 90, 200, 30};
 
         GuiLabel((Rectangle){ip_box.x, ip_box.y - 20, 100, 20}, "IP:");
-        GuiTextBox(ip_box, state->ip, 64, true);
-
         GuiLabel((Rectangle){port_box.x, port_box.y - 20, 100, 20}, "Port:");
-        GuiTextBox(port_box, state->port, 16, true);
+
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+            bool clicked_ip = CheckCollisionPointRec(GetMousePosition(), ip_box);
+            bool clicked_port = CheckCollisionPointRec(GetMousePosition(), port_box);
+            if (clicked_ip) {
+                state->ip_edit_mode = true;
+                state->port_edit_mode = false;
+            } else if (clicked_port) {
+                state->port_edit_mode = true;
+                state->ip_edit_mode = false;
+            } else {
+                state->ip_edit_mode = false;
+                state->port_edit_mode = false;
+            }
+        }
+
+        GuiTextBox(ip_box, state->ip, 64, state->ip_edit_mode);
+        GuiTextBox(port_box, state->port, 16, state->port_edit_mode);
 
         if (GuiButton(
                 (Rectangle){connect_win.x + 20, connect_win.y + 140, 120, 30},

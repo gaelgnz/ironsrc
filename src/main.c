@@ -9,6 +9,8 @@
 #include <netinet/in.h>
 #include <pthread.h>
 #include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
 #include <strings.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -21,6 +23,8 @@ int main(void) {
 
     Global global = {0};
     global.gamemode = GM_MENU;
+    strcpy(global.menu.ip, "127.0.0.1");
+    sprintf(global.menu.port, "%d", 4445);
     global.assets = assets_load();
 
     global.assets.default_font = LoadFont(
