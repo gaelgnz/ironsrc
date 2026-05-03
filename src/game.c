@@ -24,6 +24,7 @@
 #define CROUCH_SPEED_MULT 0.4f
 #define CROUCH_CAMERA_HEIGHT 0.5f
 #define NORMAL_CAMERA_HEIGHT 1.0f
+#define STEP_HEIGHT 1.0f
 
 typedef struct {
     Global *global;
@@ -376,7 +377,10 @@ void game_loop(Global *global) {
             wishdir.z /= wishlen;
         }
 
-        int on_ground = state->position.y <= 0.0f;
+        int on_ground =
+            state->position.y <= 0.0f ||
+            (state->map &&
+             is_on_sector_floor(state->position, state->map, STEP_HEIGHT));
 
         if (on_ground) {
             apply_acceleration(&state->velocity, wishdir, wishspeed,
@@ -391,15 +395,26 @@ void game_loop(Global *global) {
     }
 
     uint8_t jump_requested = 0;
-    if (IsKeyPressed(KEY_SPACE) && state->position.y <= 0.0f) {
-        state->velocity.y = JUMP_VEL;
-        jump_requested = 1;
+    if (IsKeyPressed(KEY_SPACE)) {
+        int on_ground =
+            state->position.y <= 0.0f ||
+            (state->map &&
+             is_on_sector_floor(state->position, state->map, STEP_HEIGHT));
+        if (on_ground) {
+            state->velocity.y = JUMP_VEL;
+            jump_requested = 1;
+        }
     }
 
     state->velocity.y -= GRAVITY * frameTime;
 
     state->position =
         Vector3Add(state->position, Vector3Scale(state->velocity, frameTime));
+
+    if (state->map) {
+        apply_sector_floor(&state->position, &state->velocity, state->map,
+                           STEP_HEIGHT);
+    }
 
     if (state->position.y < 0.0f) {
         state->position.y = 0.0f;

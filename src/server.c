@@ -20,6 +20,7 @@
 #define PORT 4445
 #define MAX_BUF 1024
 #define TIMEOUT_SEC 5.0
+#define STEP_HEIGHT 1.0f
 
 pthread_mutex_t server_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -208,7 +209,10 @@ void sv_tick(Server *server, float dt) {
             e->velocity.z = upd.current_velocity.z;
 
             // Allow jump: client explicitly requested it and entity is on floor
-            if (server->jump_pending[e->client_id] && e->position.y <= 0.0f) {
+            int on_floor =
+                e->position.y <= 0.0f ||
+                is_on_sector_floor(e->position, &server->map, STEP_HEIGHT);
+            if (server->jump_pending[e->client_id] && on_floor) {
                 e->velocity.y = 10.f;
                 server->jump_pending[e->client_id] = 0;
             }
@@ -222,6 +226,8 @@ void sv_tick(Server *server, float dt) {
         e->position = Vector3Add(e->position, Vector3Scale(e->velocity, dt));
 
         // Floor collision
+        apply_sector_floor(&e->position, &e->velocity,
+                           &server->map, STEP_HEIGHT);
         if (e->position.y < 0.0f) {
             e->position.y = 0.0f;
             e->velocity.y = 0.0f;

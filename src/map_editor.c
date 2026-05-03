@@ -292,7 +292,9 @@ done:
 
             // Floor H
             DrawText("Floor H:", cx + 10, cy, 16, WHITE);
-            sprintf(state->floor_h_str, "%d", s->floor_height);
+            if (!state->floor_edit_mode) {
+                sprintf(state->floor_h_str, "%d", s->floor_height);
+            }
             if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
                 bool clicked = CheckCollisionPointRec(
                     GetMousePosition(), (Rectangle){cx + 70, cy, 60, 25});
@@ -303,14 +305,16 @@ done:
                 }
             }
             if (GuiTextBox((Rectangle){cx + 70, cy, 60, 25}, state->floor_h_str, 8,
-                          state->floor_edit_mode)) {
+                           state->floor_edit_mode)) {
                 s->floor_height = atoi(state->floor_h_str);
             }
             cy += 30;
 
             // Ceil H
             DrawText("Ceil H:", cx + 10, cy, 16, WHITE);
-            sprintf(state->ceil_h_str, "%d", s->ceiling_height);
+            if (!state->ceil_edit_mode) {
+                sprintf(state->ceil_h_str, "%d", s->ceiling_height);
+            }
             if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
                 bool clicked = CheckCollisionPointRec(
                     GetMousePosition(), (Rectangle){cx + 70, cy, 60, 25});
@@ -321,7 +325,7 @@ done:
                 }
             }
             if (GuiTextBox((Rectangle){cx + 70, cy, 60, 25}, state->ceil_h_str, 8,
-                          state->ceil_edit_mode)) {
+                           state->ceil_edit_mode)) {
                 s->ceiling_height = atoi(state->ceil_h_str);
             }
             cy += 30;
