@@ -1,0 +1,6 @@
+build/
+ironsrc
+server
+*.dat
+*.log
+*.wav

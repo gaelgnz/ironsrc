@@ -17,6 +17,9 @@ typedef struct Sector {
 typedef struct Map {
     Sector sectors[MAX_SECTORS];
     int sector_count;
+
+    Entity entities[MAX_ENTITIES];
+    int entity_count;
 } Map;
 
 Map *load_map(const char *file_path);

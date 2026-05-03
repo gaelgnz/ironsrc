@@ -4,6 +4,7 @@
 #include "raygui.h"
 #include "raylib.h"
 #include <stdio.h>
+#include <string.h>
 void menu_loop(Global *global) {
     MenuState *state = &global->menu;
 
@@ -77,7 +78,13 @@ void menu_loop(Global *global) {
     }
 
     if (GuiButton((Rectangle){296, GetScreenHeight() - 60, 120, 30},
-                  "Map Editor")) {
+                   "Map Editor")) {
+        // Initialize map editor state
+        memset(&global->editor, 0, sizeof(MapEditorState));
+        global->editor.map = (Map){0};
+        global->editor.selected_sector = -1;
+        strcpy(global->editor.filename, "map.dat");
+        global->editor.initialized = 1;
         global->gamemode = GM_MAPEDITOR;
     }
 

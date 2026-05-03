@@ -52,6 +52,15 @@ static int snap(int v) { return (v / GRID_SIZE) * GRID_SIZE; }
 void map_editor_loop(Global *global) {
     MapEditorState *state = &global->editor;
 
+    // Initialize if first time
+    if (!state->initialized) {
+        memset(state, 0, sizeof(MapEditorState));
+        state->map = (Map){0};
+        state->selected_sector = -1;
+        strcpy(state->filename, "map.dat");
+        state->initialized = 1;
+    }
+
     BeginDrawing();
     ClearBackground(BLACK);
 
@@ -93,6 +102,16 @@ void map_editor_loop(Global *global) {
     // Draw sectors
     for (int i = 0; i < state->map.sector_count; i++) {
         draw_sector(&state->map.sectors[i], i == state->selected_sector, cam);
+    }
+
+    // Draw entities
+    for (int i = 0; i < state->map.entity_count; i++) {
+        Entity *e = &state->map.entities[i];
+        if (!e->active) continue;
+        Vector2 ent_pos = {e->position.x + cam.x, e->position.z + cam.y};
+        Color col = e->type == ENT_PLAYER_START ? GREEN : YELLOW;
+        DrawCircle(ent_pos.x, ent_pos.y, 5, col);
+        DrawText(TextFormat("%d", i), ent_pos.x + 8, ent_pos.y - 4, 10, WHITE);
     }
 
     Vector2 mouse = GetMousePosition();
@@ -323,6 +342,21 @@ done:
             }
             cy += 40;
         }
+
+        // Add entity button
+        if (GuiButton((Rectangle){cx + 10, cy, 120, 30}, "Add PLAYER_START")) {
+            if (state->map.entity_count < MAX_ENTITIES) {
+                Entity *e = &state->map.entities[state->map.entity_count];
+                memset(e, 0, sizeof(Entity));
+                e->type = ENT_PLAYER_START;
+                e->active = true;
+                e->id = state->map.entity_count;
+                e->position = (Vector3){sw/2 - cam.x, 0, sh/2 - cam.y};
+                state->map.entity_count++;
+                strcpy(state->status, "Added PLAYER_START");
+            }
+        }
+        cy += 40;
 
         // File operations
         DrawText("File:", cx + 10, cy, 18, WHITE);

@@ -2,13 +2,16 @@
 #define ENTITY_H
 
 #define NOT_PLAYER -1
+#define MAX_ENTITIES 256
+
 #include "raylib.h"
 
 typedef enum EntityType {
     ENT_PLAYER,
+    ENT_PLAYER_START,
     ENT_LIGHT,
     ENT_NPC_GENERIC,
-    ENT_PROP
+    ENT_PROP,
 } EntityType;
 
 typedef struct PlayerData {

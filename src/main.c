@@ -27,7 +27,6 @@ int main(void) {
     strcpy(global.menu.ip, "127.0.0.1");
     sprintf(global.menu.port, "%d", 4445);
     global.assets = assets_load();
-    strcpy(global.editor.filename, "map.dat");
 
     global.assets.default_font = LoadFont(
         "assets/fonts/font.ttf"); // dosent like being called in assets_load

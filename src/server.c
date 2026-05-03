@@ -120,8 +120,18 @@ void sv_join_player(Server *server, const char username[],
 
     e->type = ENT_PLAYER;
     e->client_id = id;
-    e->position = (Vector3){0, 0, 0};
     e->active = true;
+
+    // Find PLAYER_START in map
+    Vector3 spawn_pos = {0, 0, 0};
+    for (int i = 0; i < server->map.entity_count; i++) {
+        Entity *me = &server->map.entities[i];
+        if (me->active && me->type == ENT_PLAYER_START) {
+            spawn_pos = me->position;
+            break;
+        }
+    }
+    e->position = spawn_pos;
 
     strncpy(e->player.username, username, sizeof(e->player.username) - 1);
     e->player.health = 67; // funniest code ever
@@ -329,6 +339,69 @@ void *recv_thread(void *arg) {
     return NULL;
 }
 
+
+// TCP map transfer
+typedef struct {
+    Server *sv;
+} TcpMapArgs;
+
+void *tcp_map_thread(void *arg) {
+    TcpMapArgs *args = (TcpMapArgs *)arg;
+    Server *sv = args->sv;
+    free(args);
+    printf("[TCP] Starting TCP map thread\n");
+
+    int tcp_fd = socket(AF_INET, SOCK_STREAM, 0);
+    printf("[TCP] TCP socket created: %d\n", tcp_fd);
+    int reuse = 1;
+    setsockopt(tcp_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+
+    struct sockaddr_in tcp_addr = {0};
+    tcp_addr.sin_family = AF_INET;
+    tcp_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    tcp_addr.sin_port = htons(4446);
+
+    if (bind(tcp_fd, (struct sockaddr *)&tcp_addr, sizeof(tcp_addr)) == 0)
+        printf("[TCP] Bound to port 4446\n");
+    else
+        printf("[TCP] Bind failed\n");
+    listen(tcp_fd, 5);
+
+    printf("[TCP] TCP map server listening on 4446\n");
+
+    while (1) {
+        struct sockaddr_in client_addr;
+        socklen_t client_len = sizeof(client_addr);
+        printf("[TCP] Waiting for map client...\n");
+        fflush(stdout);
+        int client_fd = accept(tcp_fd, (struct sockaddr *)&client_addr, &client_len);
+        if (client_fd < 0) {
+            printf("[TCP] Accept failed\n");
+            fflush(stdout);
+            continue;
+        }
+        printf("[TCP] Map client connected, sending map...\n");
+        fflush(stdout);
+
+        // Send map size then map data
+        pthread_mutex_lock(&server_mutex);
+        int map_size = sizeof(Map);
+        printf("[TCP] Sending map size: %d\n", map_size);
+        fflush(stdout);
+        write(client_fd, &map_size, sizeof(map_size));
+        printf("[TCP] Sending map data...\n");
+        fflush(stdout);
+        write(client_fd, &sv->map, map_size);
+        pthread_mutex_unlock(&server_mutex);
+
+        printf("[TCP] Map sent successfully\n");
+        fflush(stdout);
+        close(client_fd);
+    }
+    return NULL;
+}
+
+
 int main() {
     int listenfd;
     struct sockaddr_in addr;
@@ -348,6 +421,25 @@ int main() {
 
     Server *sv = calloc(1, sizeof(Server));
     sv_init(sv);
+
+    // Load map
+    FILE *map_file = fopen("map.dat", "rb");
+    if (map_file) {
+        fread(&sv->map, sizeof(Map), 1, map_file);
+        fclose(map_file);
+        printf("Loaded map with %d sectors, %d entities\n",
+               sv->map.sector_count, sv->map.entity_count);
+        fflush(stdout);
+    } else {
+        printf("No map.dat found, using empty map\n");
+        fflush(stdout);
+    }
+
+    // Start TCP map thread
+    TcpMapArgs *tcp_args = malloc(sizeof(TcpMapArgs));
+    tcp_args->sv = sv;
+    pthread_t tcp_tid;
+    pthread_create(&tcp_tid, NULL, tcp_map_thread, tcp_args);
 
     RecvThreadArgs *args = malloc(sizeof(RecvThreadArgs));
     args->listenfd = listenfd;
@@ -379,3 +471,4 @@ int main() {
     free(sv);
     return 0;
 }
+

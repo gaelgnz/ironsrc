@@ -38,6 +38,9 @@ typedef struct MapEditorState {
     // Persisted strings for text boxes
     char floor_h_str[8];
     char ceil_h_str[8];
+
+    // Initialization flag
+    int initialized;
 } MapEditorState;
 
 typedef struct Global Global;
