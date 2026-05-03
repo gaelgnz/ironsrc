@@ -125,8 +125,6 @@ void connect_sv(Global *global) {
     global->gamemode = GM_INGAME;
     global->ingame.crouching = 0;
 
-    global->ingame.map = load_map("map.map");
-
     if (FileExists("chat.wav")) {
         InitAudioDevice();
         global->ingame.chat_sound = LoadSound("chat.wav");

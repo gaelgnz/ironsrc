@@ -178,7 +178,6 @@ void sv_init(Server *server) {
     npc.type = ENT_NPC_GENERIC;
     npc.active = true;
 
-    load_map("map.map");
     server->entities[0] = npc;
     server->entity_count = 1;
 }
@@ -200,7 +199,7 @@ void sv_tick(Server *server, float dt) {
 
             // Allow jump: client explicitly requested it and entity is on floor
             if (server->jump_pending[e->client_id] && e->position.y <= 0.0f) {
-                e->velocity.y = 5.0f;
+                e->velocity.y = 10.f;
                 server->jump_pending[e->client_id] = 0;
             }
         }
