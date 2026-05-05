@@ -1,5 +1,6 @@
 #include "map_editor.h"
 #include "assets.h"
+#include "entity.h"
 #include "global.h"
 #include "map.h"
 #include "math.h"
@@ -114,6 +115,14 @@ void map_editor_loop(Global *global) {
             s->selected = -1;
         }
 
+        if (IsKeyPressed(KEY_X)) {
+            Entity e = (Entity){0};
+            e.active = true;
+            e.type = ENT_PLAYER_START;
+            Vector2 pos = GetScreenToWorld2D(GetMousePosition(), s->camera);
+            e.position = (Vector3){pos.x, 0, pos.y};
+            s->map.entities[s->map.entity_count] = e;
+        }
         if (s->creating) {
             if (IsMouseButtonReleased(MOUSE_RIGHT_BUTTON)) {
                 Vector2 snapped = snap_to_grid(world_mouse);
