@@ -1,3 +1,7 @@
+/*
+game.h - Copyright (C) 2026 gaelgnz <gaelgnz06@gmail.com>
+Licensed under the GNU GPL v3. See LICENSE for details.
+*/
 #ifndef GAME_H
 #define GAME_H
 
@@ -10,6 +14,7 @@
 typedef enum InputState {
     IS_CHAT,
     IS_MOVING,
+    IS_MENU,
 } InputState;
 
 typedef struct IngameState {

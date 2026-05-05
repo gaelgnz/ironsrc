@@ -1,3 +1,7 @@
+/*
+map_editor.c - Copyright (C) 2026 gaelgnz <gaelgnz06@gmail.com>
+Licensed under the GNU GPL v3. See LICENSE for details.
+*/
 #include "map_editor.h"
 #include "assets.h"
 #include "entity.h"
@@ -101,7 +105,6 @@ void map_editor_loop(Global *global) {
     // Delete selected sector
     if (IsKeyPressed(KEY_X)) {
 
-        // Remove any existing ENT_PLAYER_START
         for (int i = 0; i < s->map.entity_count; i++) {
             if (s->map.entities[i].type == ENT_PLAYER_START) {
                 // Shift everything left
@@ -109,7 +112,7 @@ void map_editor_loop(Global *global) {
                     s->map.entities[j] = s->map.entities[j + 1];
                 }
                 s->map.entity_count--;
-                i--; // stay on same index in case there are multiple
+                i--;
             }
         }
 
@@ -119,7 +122,14 @@ void map_editor_loop(Global *global) {
         e.type = ENT_PLAYER_START;
 
         Vector2 pos = GetScreenToWorld2D(GetMousePosition(), s->camera);
-        e.position = (Vector3){pos.x, 0, pos.y};
+        float floor_y = 0;
+        for (int i = 0; i < s->map.sector_count; i++) {
+            if (is_mouse_in_sector(s->camera, &s->map.sectors[i])) {
+                floor_y = s->map.sectors[i].floor_height + 1;
+                break;
+            }
+        }
+        e.position = (Vector3){pos.x, floor_y, pos.y};
 
         s->map.entities[s->map.entity_count++] = e;
     }
@@ -151,13 +161,13 @@ void map_editor_loop(Global *global) {
                 if (w >= MIN_SECTOR_SIZE && h >= MIN_SECTOR_SIZE &&
                     s->map.sector_count < MAX_SECTORS) {
                     Sector ns = {0};
-                    strncpy(ns.texture, "default", 32);
+                    strncpy(ns.texture, "metal_01", 32);
                     ns.x = x;
                     ns.y = y;
                     ns.width = w;
                     ns.height = h;
                     ns.floor_height = 0;
-                    ns.ceiling_height = 128;
+                    ns.ceiling_height = 30;
                     ns.ceiling_enabled = true;
                     s->selected = s->map.sector_count;
                     s->map.sectors[s->map.sector_count++] = ns;

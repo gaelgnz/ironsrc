@@ -1,3 +1,7 @@
+/*
+raygui.h - Copyright (C) 2026 gaelgnz <gaelgnz06@gmail.com>
+Licensed under the GNU GPL v3. See LICENSE for details.
+*/
 /*******************************************************************************************
  *
  *   raygui v5.0 - A simple and easy-to-use immediate-mode gui library

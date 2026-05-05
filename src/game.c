@@ -1,3 +1,7 @@
+/*
+game.c - Copyright (C) 2026 gaelgnz <gaelgnz06@gmail.com>
+Licensed under the GNU GPL v3. See LICENSE for details.
+*/
 #include "game.h"
 #include "entity.h"
 #include "global.h"
@@ -13,8 +17,8 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <sys/prctl.h>
+#include <unistd.h>
 #define GROUND_ACCEL 10.0f
 #define AIR_ACCEL 2.0f
 #define MAX_SPEED 10.0f
@@ -124,14 +128,14 @@ void connect_sv(Global *global) {
     printf("[TCP] TCP socket created: %d\n", tcp_fd);
     struct sockaddr_in tcp_addr = sv_addr;
     tcp_addr.sin_port = htons(4446);
-    
+
     // Set timeout for connect
     struct timeval timeout;
     timeout.tv_sec = 5;
     timeout.tv_usec = 0;
     setsockopt(tcp_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
     setsockopt(tcp_fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
-    
+
     if (connect(tcp_fd, (struct sockaddr *)&tcp_addr, sizeof(tcp_addr)) == 0) {
         printf("[TCP] TCP connected, receiving map...\n");
         int map_size;
@@ -148,12 +152,14 @@ void connect_sv(Global *global) {
                 n = read(tcp_fd, (char *)global->ingame.map + total_read,
                          map_size - total_read);
                 if (n <= 0) {
-                    printf("[TCP] Failed to read map data, got %d (total %d/%d)\n",
-                           n, total_read, map_size);
+                    printf(
+                        "[TCP] Failed to read map data, got %d (total %d/%d)\n",
+                        n, total_read, map_size);
                     break;
                 }
                 total_read += n;
-                printf("[TCP] Read %d bytes (total %d/%d)\n", n, total_read, map_size);
+                printf("[TCP] Read %d bytes (total %d/%d)\n", n, total_read,
+                       map_size);
             }
             close(tcp_fd);
             if (total_read == map_size) {
@@ -220,15 +226,14 @@ void connect_sv(Global *global) {
 
 void host() {
     pid_t pid = fork();
-
     if (pid == 0) {
         prctl(PR_SET_PDEATHSIG, SIGTERM);
-        // Redirect output to /dev/null to avoid interfering with parent
         freopen("/dev/null", "w", stdout);
         freopen("/dev/null", "w", stderr);
-        // Try current directory first, then try absolute path
         execl("./server", "server", (char *)NULL);
-        execl("/home/gael/c/ironsrc/server", "server", (char *)NULL);
+        char path[256];
+        snprintf(path, sizeof(path), "%s/server", getenv("HOME"));
+        execl(path, "server", (char *)NULL);
         _exit(1);
     }
     // Wait for server to start
@@ -302,6 +307,15 @@ void game_loop(Global *global) {
     float camera_height =
         state->crouching ? CROUCH_CAMERA_HEIGHT : NORMAL_CAMERA_HEIGHT;
 
+    Vector3 wishdir = {0};
+    float wishspeed = MAX_SPEED * speed_mult;
+
+    float wishlen = sqrtf(wishdir.x * wishdir.x + wishdir.z * wishdir.z);
+    if (wishlen > 0) {
+        wishdir.x /= wishlen;
+        wishdir.z /= wishlen;
+    }
+
     switch (state->input_state) {
     case IS_CHAT:
         if (IsKeyPressed(KEY_ESCAPE)) {
@@ -343,6 +357,8 @@ void game_loop(Global *global) {
     case IS_MOVING:
         if (IsKeyPressed(KEY_T)) {
             state->input_state = IS_CHAT;
+        } else if (IsKeyPressed(KEY_ESCAPE)) {
+            state->input_state = IS_MENU;
         }
         if (IsKeyDown(KEY_U)) {
             ShowCursor();
@@ -350,10 +366,6 @@ void game_loop(Global *global) {
         if (IsKeyDown(KEY_I)) {
             DisableCursor();
         }
-
-        Vector3 wishdir = {0};
-        float wishspeed = MAX_SPEED * speed_mult;
-
         if (IsKeyDown(KEY_W)) {
             wishdir.x += forward.x;
             wishdir.z += forward.z;
@@ -370,30 +382,23 @@ void game_loop(Global *global) {
             wishdir.x += right.x;
             wishdir.z += right.z;
         }
-
-        float wishlen = sqrtf(wishdir.x * wishdir.x + wishdir.z * wishdir.z);
-        if (wishlen > 0) {
-            wishdir.x /= wishlen;
-            wishdir.z /= wishlen;
-        }
-
-        int on_ground =
-            state->position.y <= 0.0f ||
-            (state->map &&
-             is_on_sector_floor(state->position, state->map, STEP_HEIGHT));
-
-        if (on_ground) {
-            apply_acceleration(&state->velocity, wishdir, wishspeed,
-                               GROUND_ACCEL, frameTime);
-            apply_ground_friction(&state->velocity, GROUND_FRICTION, frameTime);
-        } else {
-            apply_acceleration(&state->velocity, wishdir, wishspeed, AIR_ACCEL,
-                               frameTime);
-        }
-
+        break;
+    case IS_MENU:
         break;
     }
 
+    int on_ground = state->position.y <= 0.0f ||
+                    (state->map && is_on_sector_floor(state->position,
+                                                      state->map, STEP_HEIGHT));
+
+    if (on_ground) {
+        apply_acceleration(&state->velocity, wishdir, wishspeed, GROUND_ACCEL,
+                           frameTime);
+        apply_ground_friction(&state->velocity, GROUND_FRICTION, frameTime);
+    } else {
+        apply_acceleration(&state->velocity, wishdir, wishspeed, AIR_ACCEL,
+                           frameTime);
+    }
     uint8_t jump_requested = 0;
     if (IsKeyPressed(KEY_SPACE)) {
         int on_ground =
@@ -449,10 +454,6 @@ void game_loop(Global *global) {
     BeginMode3D(camera);
     if (state->map)
         draw_map(state->map, &global->assets);
-    else
-        DrawCubeTexture(get_texture(&global->assets, "dirt_01"),
-                      (Vector3){0, -0.5f, 0}, 100.0f, 1.0f, 100.0f, WHITE);
-
     pthread_mutex_lock(&state->entity_mutex);
     NetEntity snapshot[MAX_ENTITIES];
     int count = state->entity_count;
@@ -504,7 +505,8 @@ void game_loop(Global *global) {
     if (found < 3)
         chat_lines[found++] = chat;
 
-    if (state->input_state == IS_CHAT) {
+    switch (state->input_state) {
+    case IS_CHAT:
         int fontSize = 22;
         int padX = 10;
         int padY = 8;
@@ -549,7 +551,8 @@ void game_loop(Global *global) {
         snprintf(preview, sizeof(preview), "gael: %s", state->message);
         DrawTextEx(global->assets.default_font, preview,
                    (Vector2){boxX + padX, inputY + padY}, fontSize, 0, WHITE);
-    } else {
+        break;
+    case IS_MOVING:
         for (int i = found - 1; i >= 0; i--) {
             char line[128];
             const char *end = strchr(chat_lines[i], '\n');
@@ -557,11 +560,17 @@ void game_loop(Global *global) {
                 end ? (int)(end - chat_lines[i]) : (int)strlen(chat_lines[i]);
             snprintf(line, sizeof(line), "%.*s", len, chat_lines[i]);
             DrawTextEx(global->assets.default_font, line,
-                       (Vector2){20, sh - 120 + (found - 1 - i) * 26}, 20, 0,
-                       (Color){255, 255, 255, 180});
+                       (Vector2){20, sh - 120 + (found - 1 - i) * 26}, 15, 0,
+                       (Color){255, 255, 255, 255});
         }
-    }
+        break;
+    case IS_MENU:
 
+        DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(),
+                      (Color){0, 0, 0, 200});
+        DrawTextEx(global->assets.default_font, "IronSRC", Vector2Zero(), 50, 0,
+                   (Color){255, 255, 255, 255});
+    }
     EndDrawing();
 
     pktUserUpdate user_update = {0};
