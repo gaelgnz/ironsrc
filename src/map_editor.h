@@ -3,47 +3,31 @@
 
 #include "map.h"
 #include "raylib.h"
-
-typedef enum {
-    EDITOR_NONE,
-    EDITOR_DRAWING,
-    EDITOR_RESIZING,
-    EDITOR_DRAGGING
-} EditorMode;
+#include <stdbool.h>
+#include <stddef.h>
 
 typedef struct MapEditorState {
+    Camera2D camera;
     Map map;
-    int selected_sector;
-    char filename[64];
-    char status[128];
-
-    // 2D editor state
-    EditorMode mode;
-    Vector2 drag_start;
-    Vector2 drag_end;
-    int resize_handle;
-
-    Vector2 camera;
-    int show_controls;
-
-    // Resize state
-    int orig_x, orig_y, orig_width, orig_height;
-
-    // Text edit modes
-    int texture_edit_mode;
-    int ceil_edit_mode;
-    int floor_edit_mode;
-    int file_edit_mode;
-
-    // Persisted strings for text boxes
-    char floor_h_str[8];
-    char ceil_h_str[8];
-
-    // Initialization flag
-    int initialized;
+    int selected;
+    bool menu_open;
+    bool dragging;
+    bool resizing;
+    bool creating;
+    Vector2 drag_offset;
+    Vector2 create_start;
+    bool texture_edit_mode;
+    bool floor_edit_mode;
+    bool ceiling_edit_mode;
+    bool map_file_edit_mode;
+    char map_file_buf[64];
+    char floor_buf[16];
+    char ceil_buf[16];
+    int last_selected;
 } MapEditorState;
 
 typedef struct Global Global;
+void map_editor_init(Global *global);
 void map_editor_loop(Global *global);
 
 #endif

@@ -1,6 +1,7 @@
 #include "menu.h"
 #include "game.h"
 #include "global.h"
+#include "map_editor.h"
 #include "raygui.h"
 #include "raylib.h"
 #include <stdio.h>
@@ -42,8 +43,10 @@ void menu_loop(Global *global) {
         GuiLabel((Rectangle){port_box.x, port_box.y - 20, 100, 20}, "Port:");
 
         if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-            bool clicked_ip = CheckCollisionPointRec(GetMousePosition(), ip_box);
-            bool clicked_port = CheckCollisionPointRec(GetMousePosition(), port_box);
+            bool clicked_ip =
+                CheckCollisionPointRec(GetMousePosition(), ip_box);
+            bool clicked_port =
+                CheckCollisionPointRec(GetMousePosition(), port_box);
             if (clicked_ip) {
                 state->ip_edit_mode = true;
                 state->port_edit_mode = false;
@@ -78,13 +81,10 @@ void menu_loop(Global *global) {
     }
 
     if (GuiButton((Rectangle){296, GetScreenHeight() - 60, 120, 30},
-                   "Map Editor")) {
+                  "Map Editor")) {
         // Initialize map editor state
         memset(&global->editor, 0, sizeof(MapEditorState));
-        global->editor.map = (Map){0};
-        global->editor.selected_sector = -1;
-        strcpy(global->editor.filename, "map.dat");
-        global->editor.initialized = 1;
+        map_editor_init(global);
         global->gamemode = GM_MAPEDITOR;
     }
 

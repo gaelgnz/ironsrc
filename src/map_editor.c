@@ -2,407 +2,329 @@
 #include "assets.h"
 #include "global.h"
 #include "map.h"
+#include "math.h"
+#include "menu.h"
 #include "raygui.h"
 #include "raylib.h"
 #include "string.h"
 #include <stdio.h>
 #include <stdlib.h>
 
-#define GRID_SIZE 10
+#define GRID_SIZE 5
 #define HANDLE_SIZE 8
+#define MIN_SECTOR_SIZE 10
 
-static Rectangle sector_rect(Sector *s, Vector2 cam) {
-    return (Rectangle){s->x + cam.x, s->y + cam.y, s->width, s->height};
+inline Vector2 snap_to_grid(Vector2 v) {
+    return (Vector2){(int)(v.x / GRID_SIZE) * GRID_SIZE,
+                     (int)(v.y / GRID_SIZE) * GRID_SIZE};
 }
 
-static void draw_sector(Sector *s, int selected, Vector2 cam) {
-    Rectangle r = sector_rect(s, cam);
-    Color col = selected ? GREEN : GRAY;
-    DrawRectangleRec(r, Fade(col, 0.5f));
-    DrawRectangleLinesEx(r, 2, col);
-
-    if (selected) {
-        DrawRectangle(r.x, r.y, HANDLE_SIZE, HANDLE_SIZE, RED);
-        DrawRectangle(r.x + r.width - HANDLE_SIZE, r.y, HANDLE_SIZE,
-                      HANDLE_SIZE, RED);
-        DrawRectangle(r.x, r.y + r.height - HANDLE_SIZE, HANDLE_SIZE,
-                      HANDLE_SIZE, RED);
-        DrawRectangle(r.x + r.width - HANDLE_SIZE,
-                      r.y + r.height - HANDLE_SIZE, HANDLE_SIZE, HANDLE_SIZE,
-                      RED);
-    }
-
-    char label[64];
-    sprintf(label, "%s (fl:%d cl:%d)", s->texture, s->floor_height,
-            s->ceiling_height);
-    DrawText(label, r.x + 5, r.y + 5, 10, WHITE);
+inline bool is_mouse_in_sector(Camera2D camera, Sector *sector) {
+    Vector2 mouse = GetScreenToWorld2D(GetMousePosition(), camera);
+    return mouse.x >= sector->x && mouse.x <= sector->x + sector->width &&
+           mouse.y >= sector->y && mouse.y <= sector->y + sector->height;
 }
 
-static int find_sector_at(Map *map, Vector2 pos, Vector2 cam) {
-    for (int i = map->sector_count - 1; i >= 0; i--) {
-        Rectangle r = sector_rect(&map->sectors[i], cam);
-        if (CheckCollisionPointRec(pos, r))
-            return i;
-    }
-    return -1;
+static bool is_mouse_in_resize_handle(Camera2D camera, Sector *sector) {
+    Vector2 mouse = GetScreenToWorld2D(GetMousePosition(), camera);
+    float hx = sector->x + sector->width;
+    float hy = sector->y + sector->height;
+    return mouse.x >= hx - HANDLE_SIZE && mouse.x <= hx + HANDLE_SIZE &&
+           mouse.y >= hy - HANDLE_SIZE && mouse.y <= hy + HANDLE_SIZE;
 }
-
-static int snap(int v) { return (v / GRID_SIZE) * GRID_SIZE; }
+void save_map(Map *map, const char *path) {
+    FILE *f = fopen(path, "wb");
+    if (!f)
+        return;
+    fwrite(map, sizeof(Map), 1, f);
+    fclose(f);
+}
+void map_editor_init(Global *global) {
+    MapEditorState *s = &global->editor;
+    s->camera = (Camera2D){
+        .offset = (Vector2){GetScreenWidth() / 2.0f, GetScreenHeight() / 2.0f},
+        .target = (Vector2){0, 0},
+        .rotation = 0,
+        .zoom = 1.0f};
+    s->map = *load_map("map.dat");
+    s->selected = -1;
+    s->dragging = false;
+    s->resizing = false;
+    s->creating = false;
+    s->texture_edit_mode = false;
+    s->floor_edit_mode = false;
+    s->ceiling_edit_mode = false;
+    memset(s->map_file_buf, 0, sizeof(s->map_file_buf));
+    strncpy(s->map_file_buf, "map.dat", sizeof(s->map_file_buf));
+    s->map_file_edit_mode = false;
+}
 
 void map_editor_loop(Global *global) {
-    MapEditorState *state = &global->editor;
+    MapEditorState *s = &global->editor;
+    float dt = GetFrameTime();
+    Vector2 mouse = GetMousePosition();
+    Vector2 world_mouse = GetScreenToWorld2D(mouse, s->camera);
 
-    // Initialize if first time
-    if (!state->initialized) {
-        memset(state, 0, sizeof(MapEditorState));
-        state->map = (Map){0};
-        state->selected_sector = -1;
-        strcpy(state->filename, "map.dat");
-        state->initialized = 1;
-    }
+    int panel_width = GetScreenWidth() / 3;
+    bool mouse_in_panel =
+        s->menu_open && mouse.x > GetScreenWidth() - panel_width;
 
-    BeginDrawing();
-    ClearBackground(BLACK);
+    // Camera keyboard
+    if (IsKeyDown(KEY_W))
+        s->camera.target.y -= 200.f * dt;
+    if (IsKeyDown(KEY_S))
+        s->camera.target.y += 200.f * dt;
+    if (IsKeyDown(KEY_A))
+        s->camera.target.x -= 200.f * dt;
+    if (IsKeyDown(KEY_D))
+        s->camera.target.x += 200.f * dt;
 
-    DrawText("Map Editor (LMB: draw/add, RMB: select, Drag handles, F1: controls)",
-             20, 20, 20, WHITE);
-    DrawText(state->status, 20, 50, 18, YELLOW);
-
-    if (IsKeyPressed(KEY_F1))
-        state->show_controls = !state->show_controls;
-
-    Vector2 cam = state->camera;
+    // Camera pan with middle mouse
     if (IsMouseButtonDown(MOUSE_MIDDLE_BUTTON)) {
         Vector2 delta = GetMouseDelta();
-        cam.x += delta.x;
-        cam.y += delta.y;
-    }
-    if (IsKeyDown(KEY_LEFT))
-        cam.x += 5;
-    if (IsKeyDown(KEY_RIGHT))
-        cam.x -= 5;
-    if (IsKeyDown(KEY_UP))
-        cam.y += 5;
-    if (IsKeyDown(KEY_DOWN))
-        cam.y -= 5;
-    state->camera = cam;
-
-    int sw = GetScreenWidth();
-    int sh = GetScreenHeight();
-
-    // Full window editor area
-    Rectangle editor = {0, 0, sw, sh};
-
-    // Draw grid
-    for (int x = ((int)cam.x % GRID_SIZE); x < sw; x += GRID_SIZE)
-        DrawLine(x, 0, x, sh, Fade(GRAY, 0.3f));
-    for (int y = ((int)cam.y % GRID_SIZE); y < sh; y += GRID_SIZE)
-        DrawLine(0, y, sw, y, Fade(GRAY, 0.3f));
-
-    // Draw sectors
-    for (int i = 0; i < state->map.sector_count; i++) {
-        draw_sector(&state->map.sectors[i], i == state->selected_sector, cam);
+        s->camera.target.x -= delta.x / s->camera.zoom;
+        s->camera.target.y -= delta.y / s->camera.zoom;
     }
 
-    // Draw entities
-    for (int i = 0; i < state->map.entity_count; i++) {
-        Entity *e = &state->map.entities[i];
-        if (!e->active) continue;
-        Vector2 ent_pos = {e->position.x + cam.x, e->position.z + cam.y};
-        Color col = e->type == ENT_PLAYER_START ? GREEN : YELLOW;
-        DrawCircle(ent_pos.x, ent_pos.y, 5, col);
-        DrawText(TextFormat("%d", i), ent_pos.x + 8, ent_pos.y - 4, 10, WHITE);
+    // Camera zoom
+    float wheel = GetMouseWheelMove();
+    if (wheel != 0 && !mouse_in_panel) {
+        s->camera.zoom += wheel * 0.1f;
+        if (s->camera.zoom < 0.1f)
+            s->camera.zoom = 0.1f;
     }
 
-    Vector2 mouse = GetMousePosition();
-    Vector2 world_mouse = {mouse.x - cam.x, mouse.y - cam.y};
-    int hovered = find_sector_at(&state->map, mouse, cam);
+    if (IsKeyPressed(KEY_F1))
+        s->menu_open = !s->menu_open;
 
-    if (CheckCollisionPointRec(mouse, editor)) {
-        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-            if (state->selected_sector >= 0 &&
-                state->selected_sector < state->map.sector_count) {
-                Sector *s = &state->map.sectors[state->selected_sector];
-                Rectangle r = sector_rect(s, cam);
-                Rectangle handles[] = {
-                    {r.x, r.y, HANDLE_SIZE, HANDLE_SIZE},
-                    {r.x + r.width - HANDLE_SIZE, r.y, HANDLE_SIZE,
-                     HANDLE_SIZE},
-                    {r.x, r.y + r.height - HANDLE_SIZE, HANDLE_SIZE,
-                     HANDLE_SIZE},
-                    {r.x + r.width - HANDLE_SIZE,
-                     r.y + r.height - HANDLE_SIZE, HANDLE_SIZE,
-                     HANDLE_SIZE}};
-                for (int i = 0; i < 4; i++) {
-                    if (CheckCollisionPointRec(mouse, handles[i])) {
-                        state->mode = EDITOR_RESIZING;
-                        state->resize_handle = i;
-                        state->drag_start = world_mouse;
-                        // Save original values
-                        state->orig_x = s->x;
-                        state->orig_y = s->y;
-                        state->orig_width = s->width;
-                        state->orig_height = s->height;
-                        goto done;
+    // Delete selected sector
+    if (IsKeyPressed(KEY_DELETE) && s->selected >= 0) {
+        for (int i = s->selected; i < s->map.sector_count - 1; i++)
+            s->map.sectors[i] = s->map.sectors[i + 1];
+        s->map.sector_count--;
+        s->selected = -1;
+    }
+
+    if (!mouse_in_panel) {
+        // Start creating sector with right click drag
+        if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
+            Vector2 snapped = snap_to_grid(world_mouse);
+            s->create_start = snapped;
+            s->creating = true;
+            s->selected = -1;
+        }
+
+        if (s->creating) {
+            if (IsMouseButtonReleased(MOUSE_RIGHT_BUTTON)) {
+                Vector2 snapped = snap_to_grid(world_mouse);
+                int x = (int)fminf(s->create_start.x, snapped.x);
+                int y = (int)fminf(s->create_start.y, snapped.y);
+                int w = (int)fabsf(snapped.x - s->create_start.x);
+                int h = (int)fabsf(snapped.y - s->create_start.y);
+                if (w >= MIN_SECTOR_SIZE && h >= MIN_SECTOR_SIZE &&
+                    s->map.sector_count < MAX_SECTORS) {
+                    Sector ns = {0};
+                    strncpy(ns.texture, "default", 32);
+                    ns.x = x;
+                    ns.y = y;
+                    ns.width = w;
+                    ns.height = h;
+                    ns.floor_height = 0;
+                    ns.ceiling_height = 128;
+                    ns.ceiling_enabled = true;
+                    s->selected = s->map.sector_count;
+                    s->map.sectors[s->map.sector_count++] = ns;
+                }
+                s->creating = false;
+            }
+        } else {
+            // Resize
+            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && s->selected >= 0) {
+                if (is_mouse_in_resize_handle(s->camera,
+                                              &s->map.sectors[s->selected])) {
+                    s->resizing = true;
+                }
+            }
+
+            // Drag
+            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !s->resizing) {
+                s->dragging = false;
+                for (int i = s->map.sector_count - 1; i >= 0; i--) {
+                    if (is_mouse_in_sector(s->camera, &s->map.sectors[i])) {
+                        if (i == s->selected &&
+                            !is_mouse_in_resize_handle(s->camera,
+                                                       &s->map.sectors[i])) {
+                            s->dragging = true;
+                            s->drag_offset.x =
+                                world_mouse.x - s->map.sectors[i].x;
+                            s->drag_offset.y =
+                                world_mouse.y - s->map.sectors[i].y;
+                        }
+                        s->selected = i;
+                        break;
                     }
                 }
             }
-            if (hovered >= 0) {
-                state->selected_sector = hovered;
-            } else {
-                state->mode = EDITOR_DRAWING;
-                state->drag_start = world_mouse;
-                state->drag_end = world_mouse;
+
+            if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) {
+                s->dragging = false;
+                s->resizing = false;
             }
-        }
-        if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
-            if (hovered >= 0)
-                state->selected_sector = hovered;
-        }
-    }
 
-done:
-    if (state->mode == EDITOR_DRAWING && IsMouseButtonDown(MOUSE_LEFT_BUTTON)) {
-        state->drag_end = world_mouse;
-        int x = snap(state->drag_start.x);
-        int y = snap(state->drag_start.y);
-        int w = snap(state->drag_end.x - state->drag_start.x);
-        int h = snap(state->drag_end.y - state->drag_start.y);
-        DrawRectangleLinesEx(
-            (Rectangle){x + cam.x, y + cam.y, w, h},
-            2, YELLOW);
-    }
-    if (state->mode == EDITOR_DRAWING &&
-        IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) {
-        int x = snap(state->drag_start.x);
-        int y = snap(state->drag_start.y);
-        int w = snap(state->drag_end.x - state->drag_start.x);
-        int h = snap(state->drag_end.y - state->drag_start.y);
-        if (w < 0) {
-            x += w;
-            w = -w;
-        }
-        if (h < 0) {
-            y += h;
-            h = -h;
-        }
-        if (w >= GRID_SIZE && h >= GRID_SIZE &&
-            state->map.sector_count < MAX_SECTORS) {
-            Sector *s = &state->map.sectors[state->map.sector_count];
-            s->x = x;
-            s->y = y;
-            s->width = w;
-            s->height = h;
-            s->floor_height = 10;
-            s->ceiling_height = 20;
-            s->ceiling_enabled = true;
-            strcpy(s->texture, "dirt_01");
-            state->selected_sector = state->map.sector_count;
-            state->map.sector_count++;
-            strcpy(state->status, "Sector added!");
-        }
-        state->mode = EDITOR_NONE;
-    }
-
-    if (state->mode == EDITOR_RESIZING &&
-        IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) {
-        state->mode = EDITOR_NONE;
-    }
-
-    if (state->mode == EDITOR_RESIZING) {
-        Sector *s = &state->map.sectors[state->selected_sector];
-        int dx = snap(world_mouse.x - state->drag_start.x);
-        int dy = snap(world_mouse.y - state->drag_start.y);
-
-        // Calculate new values from original + delta
-        int new_x = state->orig_x;
-        int new_y = state->orig_y;
-        int new_w = state->orig_width;
-        int new_h = state->orig_height;
-
-        switch (state->resize_handle) {
-        case 0: // top-left
-            new_x = state->orig_x + dx;
-            new_y = state->orig_y + dy;
-            new_w = state->orig_width - dx;
-            new_h = state->orig_height - dy;
-            break;
-        case 1: // top-right
-            new_y = state->orig_y + dy;
-            new_w = state->orig_width + dx;
-            new_h = state->orig_height - dy;
-            break;
-        case 2: // bottom-left
-            new_x = state->orig_x + dx;
-            new_w = state->orig_width - dx;
-            new_h = state->orig_height + dy;
-            break;
-        case 3: // bottom-right
-            new_w = state->orig_width + dx;
-            new_h = state->orig_height + dy;
-            break;
-        }
-
-        // Apply snap and minimum size
-        s->x = snap(new_x);
-        s->y = snap(new_y);
-        s->width = snap(new_w);
-        s->height = snap(new_h);
-
-        if (s->width < GRID_SIZE)
-            s->width = GRID_SIZE;
-        if (s->height < GRID_SIZE)
-            s->height = GRID_SIZE;
-    }
-
-    // Floating controls - top right
-    if (state->show_controls) {
-        int cx = sw - 270;
-        int cy = 20;
-        DrawRectangle(cx, cy, 250, 500, (Color){50, 50, 50, 230});
-
-        DrawText("Selected Sector:", cx + 10, cy + 10, 18, WHITE);
-        cy += 35;
-
-        if (state->selected_sector >= 0 &&
-            state->selected_sector < state->map.sector_count) {
-            Sector *s = &state->map.sectors[state->selected_sector];
-            DrawText(TextFormat("Pos: %d, %d", s->x, s->y), cx + 10, cy, 16,
-                     WHITE);
-            cy += 20;
-            DrawText(TextFormat("Size: %d x %d", s->width, s->height), cx + 10,
-                     cy, 16, WHITE);
-            cy += 25;
-
-            // Texture
-            DrawText("Texture:", cx + 10, cy, 16, WHITE);
-            cy += 20;
-            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-                bool clicked = CheckCollisionPointRec(
-                    GetMousePosition(), (Rectangle){cx + 10, cy, 180, 25});
-                state->texture_edit_mode = clicked;
-                if (clicked) {
-                    state->floor_edit_mode = false;
-                    state->ceil_edit_mode = false;
-                }
+            if (s->dragging && s->selected >= 0) {
+                Sector *sec = &s->map.sectors[s->selected];
+                Vector2 snapped =
+                    snap_to_grid((Vector2){world_mouse.x - s->drag_offset.x,
+                                           world_mouse.y - s->drag_offset.y});
+                sec->x = (int)snapped.x;
+                sec->y = (int)snapped.y;
             }
-            GuiTextBox((Rectangle){cx + 10, cy, 180, 25}, s->texture, 32,
-                       state->texture_edit_mode);
-            cy += 30;
 
-            // Floor H
-            DrawText("Floor H:", cx + 10, cy, 16, WHITE);
-            if (!state->floor_edit_mode) {
-                sprintf(state->floor_h_str, "%d", s->floor_height);
-            }
-            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-                bool clicked = CheckCollisionPointRec(
-                    GetMousePosition(), (Rectangle){cx + 70, cy, 60, 25});
-                state->floor_edit_mode = clicked;
-                if (clicked) {
-                    state->texture_edit_mode = false;
-                    state->ceil_edit_mode = false;
-                }
-            }
-            if (GuiTextBox((Rectangle){cx + 70, cy, 60, 25}, state->floor_h_str, 8,
-                           state->floor_edit_mode)) {
-                s->floor_height = atoi(state->floor_h_str);
-            }
-            cy += 30;
-
-            // Ceil H
-            DrawText("Ceil H:", cx + 10, cy, 16, WHITE);
-            if (!state->ceil_edit_mode) {
-                sprintf(state->ceil_h_str, "%d", s->ceiling_height);
-            }
-            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-                bool clicked = CheckCollisionPointRec(
-                    GetMousePosition(), (Rectangle){cx + 70, cy, 60, 25});
-                state->ceil_edit_mode = clicked;
-                if (clicked) {
-                    state->texture_edit_mode = false;
-                    state->floor_edit_mode = false;
-                }
-            }
-            if (GuiTextBox((Rectangle){cx + 70, cy, 60, 25}, state->ceil_h_str, 8,
-                           state->ceil_edit_mode)) {
-                s->ceiling_height = atoi(state->ceil_h_str);
-            }
-            cy += 30;
-
-            // Ceil On
-            DrawText("Ceil On:", cx + 10, cy, 16, WHITE);
-            GuiCheckBox((Rectangle){cx + 70, cy, 25, 25}, NULL,
-                       &s->ceiling_enabled);
-            cy += 35;
-
-            if (GuiButton((Rectangle){cx + 10, cy, 100, 30}, "Delete")) {
-                for (int i = state->selected_sector;
-                     i < state->map.sector_count - 1; i++) {
-                    state->map.sectors[i] = state->map.sectors[i + 1];
-                }
-                state->map.sector_count--;
-                state->selected_sector = -1;
-            }
-            cy += 40;
-        }
-
-        // Add entity button
-        if (GuiButton((Rectangle){cx + 10, cy, 120, 30}, "Add PLAYER_START")) {
-            if (state->map.entity_count < MAX_ENTITIES) {
-                Entity *e = &state->map.entities[state->map.entity_count];
-                memset(e, 0, sizeof(Entity));
-                e->type = ENT_PLAYER_START;
-                e->active = true;
-                e->id = state->map.entity_count;
-                e->position = (Vector3){sw/2 - cam.x, 0, sh/2 - cam.y};
-                state->map.entity_count++;
-                strcpy(state->status, "Added PLAYER_START");
-            }
-        }
-        cy += 40;
-
-        // File operations
-        DrawText("File:", cx + 10, cy, 18, WHITE);
-        cy += 25;
-        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-            bool clicked = CheckCollisionPointRec(
-                GetMousePosition(), (Rectangle){cx + 10, cy, 180, 25});
-            state->file_edit_mode = clicked;
-        }
-        GuiTextBox((Rectangle){cx + 10, cy, 180, 25}, state->filename, 64,
-                   state->file_edit_mode);
-        cy += 35;
-
-        if (GuiButton((Rectangle){cx + 10, cy, 100, 30}, "Save")) {
-            FILE *f = fopen(state->filename, "wb");
-            if (f) {
-                fwrite(&state->map, sizeof(Map), 1, f);
-                fclose(f);
-                strcpy(state->status, "Map saved!");
-            } else {
-                sprintf(state->status, "Failed: %s", state->filename);
-            }
-        }
-        cy += 40;
-        if (GuiButton((Rectangle){cx + 10, cy, 100, 30}, "Load")) {
-            FILE *f = fopen(state->filename, "rb");
-            if (f) {
-                fread(&state->map, sizeof(Map), 1, f);
-                fclose(f);
-                strcpy(state->status, "Map loaded!");
-            } else {
-                sprintf(state->status, "Failed: %s", state->filename);
+            if (s->resizing && s->selected >= 0) {
+                Sector *sec = &s->map.sectors[s->selected];
+                Vector2 snapped = snap_to_grid(world_mouse);
+                int new_w = (int)snapped.x - sec->x;
+                int new_h = (int)snapped.y - sec->y;
+                if (new_w >= MIN_SECTOR_SIZE)
+                    sec->width = new_w;
+                if (new_h >= MIN_SECTOR_SIZE)
+                    sec->height = new_h;
             }
         }
     }
 
-    DrawText("F1: toggle controls", 20, sh - 80, 16, GRAY);
-    DrawText("MMB/Arrows: move camera", 20, sh - 60, 16, GRAY);
+    // Draw
+    BeginDrawing();
+    ClearBackground(BLUE);
+    BeginMode2D(s->camera);
+    Vector2 top_left = GetScreenToWorld2D((Vector2){0, 0}, s->camera);
+    Vector2 bottom_right = GetScreenToWorld2D(
+        (Vector2){GetScreenWidth(), GetScreenHeight()}, s->camera);
 
-    if (GuiButton((Rectangle){20, sh - 40, 120, 30}, "Back to Menu")) {
-        global->gamemode = GM_MENU;
+    int start_x = (int)(top_left.x / GRID_SIZE) * GRID_SIZE;
+    int start_y = (int)(top_left.y / GRID_SIZE) * GRID_SIZE;
+
+    for (int x = start_x; x < (int)bottom_right.x; x += GRID_SIZE)
+        DrawLine(x, (int)top_left.y, x, (int)bottom_right.y,
+                 (Color){255, 255, 255, 20});
+
+    for (int y = start_y; y < (int)bottom_right.y; y += GRID_SIZE)
+        DrawLine((int)top_left.x, y, (int)bottom_right.x, y,
+                 (Color){255, 255, 255, 20});
+    for (int i = 0; i < s->map.sector_count; i++) {
+        Sector *sector = &s->map.sectors[i];
+        unsigned char t = (i == s->selected) ? 255 : 100;
+        Texture2D tex = get_texture(&global->assets, sector->texture);
+        DrawTexturePro(
+            tex, (Rectangle){0, 0, tex.width, tex.height},
+            (Rectangle){sector->x, sector->y, sector->width, sector->height},
+            (Vector2){0, 0}, 0.0f, (Color){255, 255, 255, t});
+        DrawRectangleLines(sector->x, sector->y, sector->width, sector->height,
+                           (Color){255, 255, 255, t});
+        if (i == s->selected) {
+            DrawRectangle(sector->x + sector->width - HANDLE_SIZE,
+                          sector->y + sector->height - HANDLE_SIZE,
+                          HANDLE_SIZE * 2, HANDLE_SIZE * 2, YELLOW);
+        }
     }
 
+    // Preview new sector while creating
+    if (s->creating) {
+        Vector2 snapped = snap_to_grid(world_mouse);
+        int x = (int)fminf(s->create_start.x, snapped.x);
+        int y = (int)fminf(s->create_start.y, snapped.y);
+        int w = (int)fabsf(snapped.x - s->create_start.x);
+        int h = (int)fabsf(snapped.y - s->create_start.y);
+        DrawRectangleLines(x, y, w, h, GREEN);
+    }
+
+    EndMode2D();
+    if (s->menu_open) {
+
+        Rectangle panel = {GetScreenWidth() - panel_width, 0, panel_width,
+                           GetScreenHeight()};
+        GuiWindowBox(panel, "Edit Sector");
+
+        float px = panel.x + 10;
+        float py = panel.y + 30;
+        float fw = panel_width - 20;
+
+        GuiLabel((Rectangle){px, py, fw, 20}, "Map file:");
+        py += 20;
+        Rectangle map_file_box = {px, py, fw - 60, 25};
+        if (GuiTextBox(map_file_box, s->map_file_buf, sizeof(s->map_file_buf),
+                       s->map_file_edit_mode))
+            s->map_file_edit_mode = !s->map_file_edit_mode;
+        if (GuiButton((Rectangle){px + fw - 55, py, 55, 25}, "Load")) {
+            Map *loaded = load_map(s->map_file_buf);
+            if (loaded) {
+                s->map = *loaded;
+                s->selected = -1;
+            }
+        }
+        py += 35;
+
+        if (s->selected >= 0 && s->selected < s->map.sector_count) {
+            Sector *sec = &s->map.sectors[s->selected];
+            if (s->selected != s->last_selected) {
+                snprintf(s->floor_buf, sizeof(s->floor_buf), "%d",
+                         sec->floor_height);
+                snprintf(s->ceil_buf, sizeof(s->ceil_buf), "%d",
+                         sec->ceiling_height);
+                s->last_selected = s->selected;
+            }
+            GuiLabel((Rectangle){px, py, fw, 20},
+                     TextFormat("Sector %d", s->selected));
+            py += 25;
+
+            GuiLabel((Rectangle){px, py, fw, 20}, "Texture:");
+            py += 20;
+            Rectangle tex_box = {px, py, fw, 25};
+            if (GuiTextBox(tex_box, sec->texture, 32, s->texture_edit_mode))
+                s->texture_edit_mode = !s->texture_edit_mode;
+            py += 35;
+
+            GuiLabel((Rectangle){px, py, fw, 20}, "Floor height:");
+            py += 20;
+            Rectangle floor_box = {px, py, fw, 25};
+
+            if (GuiTextBox(floor_box, s->floor_buf, sizeof(s->floor_buf),
+                           s->floor_edit_mode)) {
+                s->floor_edit_mode = !s->floor_edit_mode;
+                sec->floor_height = atoi(s->floor_buf);
+            }
+
+            py += 35;
+
+            GuiLabel((Rectangle){px, py, fw, 20}, "Ceiling height:");
+            py += 20;
+            Rectangle ceil_box = {px, py, fw, 25};
+            if (GuiTextBox(ceil_box, s->ceil_buf, sizeof(s->ceil_buf),
+                           s->ceiling_edit_mode)) {
+                s->ceiling_edit_mode = !s->ceiling_edit_mode;
+                sec->ceiling_height = atoi(s->ceil_buf);
+            }
+            py += 35;
+
+            GuiCheckBox((Rectangle){px, py, 20, 20}, "Ceiling enabled",
+                        &sec->ceiling_enabled);
+            py += 35;
+
+            GuiLabel((Rectangle){px, py, fw, 20},
+                     TextFormat("Pos: %d, %d", sec->x, sec->y));
+            py += 20;
+            GuiLabel((Rectangle){px, py, fw, 20},
+                     TextFormat("Size: %d x %d", sec->width, sec->height));
+            py += 35;
+
+            if (GuiButton((Rectangle){px, py, fw, 25}, "Save"))
+                save_map(&s->map, s->map_file_buf);
+        } else {
+            GuiLabel((Rectangle){px, py, fw, 20}, "No sector selected");
+            py += 25;
+            GuiLabel((Rectangle){px, py, fw, 20}, "Right-drag to create");
+        }
+    }
+    DrawFPS(0, 0);
     EndDrawing();
 }
