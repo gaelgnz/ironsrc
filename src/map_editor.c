@@ -99,11 +99,29 @@ void map_editor_loop(Global *global) {
         s->menu_open = !s->menu_open;
 
     // Delete selected sector
-    if (IsKeyPressed(KEY_DELETE) && s->selected >= 0) {
-        for (int i = s->selected; i < s->map.sector_count - 1; i++)
-            s->map.sectors[i] = s->map.sectors[i + 1];
-        s->map.sector_count--;
-        s->selected = -1;
+    if (IsKeyPressed(KEY_X)) {
+
+        // Remove any existing ENT_PLAYER_START
+        for (int i = 0; i < s->map.entity_count; i++) {
+            if (s->map.entities[i].type == ENT_PLAYER_START) {
+                // Shift everything left
+                for (int j = i; j < s->map.entity_count - 1; j++) {
+                    s->map.entities[j] = s->map.entities[j + 1];
+                }
+                s->map.entity_count--;
+                i--; // stay on same index in case there are multiple
+            }
+        }
+
+        // Add new one
+        Entity e = (Entity){0};
+        e.active = true;
+        e.type = ENT_PLAYER_START;
+
+        Vector2 pos = GetScreenToWorld2D(GetMousePosition(), s->camera);
+        e.position = (Vector3){pos.x, 0, pos.y};
+
+        s->map.entities[s->map.entity_count++] = e;
     }
 
     if (!mouse_in_panel) {
@@ -121,7 +139,7 @@ void map_editor_loop(Global *global) {
             e.type = ENT_PLAYER_START;
             Vector2 pos = GetScreenToWorld2D(GetMousePosition(), s->camera);
             e.position = (Vector3){pos.x, 0, pos.y};
-            s->map.entities[s->map.entity_count] = e;
+            s->map.entities[s->map.entity_count++] = e;
         }
         if (s->creating) {
             if (IsMouseButtonReleased(MOUSE_RIGHT_BUTTON)) {
@@ -234,6 +252,13 @@ void map_editor_loop(Global *global) {
             DrawRectangle(sector->x + sector->width - HANDLE_SIZE,
                           sector->y + sector->height - HANDLE_SIZE,
                           HANDLE_SIZE * 2, HANDLE_SIZE * 2, YELLOW);
+        }
+    }
+
+    for (int i = 0; i < s->map.entity_count; i++) {
+        Entity *e = &s->map.entities[i];
+        if (e->active && e->type == ENT_PLAYER_START) {
+            DrawCircleV((Vector2){e->position.x, e->position.z}, 5, GREEN);
         }
     }
 

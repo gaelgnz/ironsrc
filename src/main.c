@@ -17,7 +17,7 @@
 #include <unistd.h>
 
 int main(void) {
-    InitWindow(800, 600, "IronSrc test");
+    InitWindow(800, 600, "IronSrc");
     SetTargetFPS(60);
 
     SetExitKey(-1);
