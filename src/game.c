@@ -13,6 +13,7 @@ Licensed under the GNU GPL v3. See LICENSE for details.
 #include "render.h"
 #include "server.h"
 #include "string.h"
+#include "weapon.h"
 #include <math.h>
 #include <pthread.h>
 #include <signal.h>
@@ -208,6 +209,7 @@ void connect_sv(Global *global) {
     strcpy(global->ingame.message, "ess");
     global->gamemode = GM_INGAME;
     global->ingame.crouching = 0;
+    global->ingame.inventory[0] = revolver();
 
     if (FileExists("chat.wav")) {
         InitAudioDevice();

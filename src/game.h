@@ -7,6 +7,7 @@ Licensed under the GNU GPL v3. See LICENSE for details.
 
 #include "protocol.h"
 #include "raylib.h"
+#include "weapon.h"
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -42,6 +43,9 @@ typedef struct IngameState {
     // audio
     Sound chat_sound;
     int chat_sound_loaded;
+
+    Weapon inventory[8];
+    size_t inventory_idx;
 
     // crouch state
     int crouching;

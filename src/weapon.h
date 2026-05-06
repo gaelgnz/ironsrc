@@ -14,11 +14,14 @@ typedef enum WeaponType {
 } WeaponType;
 
 typedef struct Weapon {
-    char viewtexture[64];
-    char heldtexture[64];
+    char viewtexture[32];
+    char heldtexture[32];
+    char shottexture[32];
     WeaponType type;
     float firerate;
     bool automatic;
 } Weapon;
+
+Weapon revolver();
 
 #endif // !WEAPON_H
