@@ -24,14 +24,13 @@
 - [x] Implement `clientupdate`
 - [x] Menu interface using `rlgui` - up next
 - [x] Add a `NetEntity` type — server only sends what client needs to render
-- [ ] TAB menu
+- [x] ESC menu
 - [ ] More entity types (particles, sounds, etc.)
 - [x] Chat in server struct
 - [x] Be able to chat
 - [next] Start map design — BSP or custom format
 - [ ] Map triggers
-- [ ] Model loading
-
+- [x] Model loading, ditched, billboards better
 ---
 
 ## Multiplayer philosophy

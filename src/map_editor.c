@@ -15,9 +15,9 @@ Licensed under the GNU GPL v3. See LICENSE for details.
 #include <stdio.h>
 #include <stdlib.h>
 
-#define GRID_SIZE 5
-#define HANDLE_SIZE 8
-#define MIN_SECTOR_SIZE 10
+#define GRID_SIZE 1
+#define HANDLE_SIZE 1
+#define MIN_SECTOR_SIZE 1
 
 inline Vector2 snap_to_grid(Vector2 v) {
     return (Vector2){(int)(v.x / GRID_SIZE) * GRID_SIZE,
@@ -50,8 +50,7 @@ void map_editor_init(Global *global) {
         .offset = (Vector2){GetScreenWidth() / 2.0f, GetScreenHeight() / 2.0f},
         .target = (Vector2){0, 0},
         .rotation = 0,
-        .zoom = 1.0f};
-    s->map = *load_map("map.dat");
+        .zoom = 4.0f};
     s->selected = -1;
     s->dragging = false;
     s->resizing = false;
@@ -171,7 +170,7 @@ void map_editor_loop(Global *global) {
                     ns.width = w;
                     ns.height = h;
                     ns.floor_height = 0;
-                    ns.ceiling_height = 30;
+                    ns.ceiling_height = 5;
                     ns.ceiling_enabled = true;
                     s->selected = s->map.sector_count;
                     s->map.sectors[s->map.sector_count++] = ns;
@@ -272,7 +271,7 @@ void map_editor_loop(Global *global) {
     for (int i = 0; i < s->map.entity_count; i++) {
         Entity *e = &s->map.entities[i];
         if (e->active && e->type == ENT_PLAYER_START) {
-            DrawCircleV((Vector2){e->position.x, e->position.z}, 5, GREEN);
+            DrawCircleV((Vector2){e->position.x, e->position.z}, 0.2, GREEN);
         }
     }
 

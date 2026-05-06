@@ -243,7 +243,89 @@ void DrawCubeTextureRec(Texture2D texture, Rectangle source, Vector3 position,
 
     rlSetTexture(0);
 }
+void DrawCubeTexturedTiled(Texture2D tex, Vector3 position, float width,
+                           float height, float length, float tileScale,
+                           Color tint) {
+    float hw = width / 2.0f, hh = height / 2.0f, hl = length / 2.0f;
 
+    // UV repeats every `tileScale` world units
+    float uW = width / tileScale;
+    float uH = height / tileScale;
+    float uL = length / tileScale;
+
+    rlSetTexture(tex.id);
+    rlBegin(RL_QUADS);
+    rlColor4ub(tint.r, tint.g, tint.b, tint.a);
+
+    // Front face  (z+)
+    rlNormal3f(0, 0, 1);
+    rlTexCoord2f(0, 0);
+    rlVertex3f(position.x - hw, position.y - hh, position.z + hl);
+    rlTexCoord2f(uW, 0);
+    rlVertex3f(position.x + hw, position.y - hh, position.z + hl);
+    rlTexCoord2f(uW, uH);
+    rlVertex3f(position.x + hw, position.y + hh, position.z + hl);
+    rlTexCoord2f(0, uH);
+    rlVertex3f(position.x - hw, position.y + hh, position.z + hl);
+
+    // Back face   (z-)
+    rlNormal3f(0, 0, -1);
+    rlTexCoord2f(uW, 0);
+    rlVertex3f(position.x - hw, position.y - hh, position.z - hl);
+    rlTexCoord2f(uW, uH);
+    rlVertex3f(position.x - hw, position.y + hh, position.z - hl);
+    rlTexCoord2f(0, uH);
+    rlVertex3f(position.x + hw, position.y + hh, position.z - hl);
+    rlTexCoord2f(0, 0);
+    rlVertex3f(position.x + hw, position.y - hh, position.z - hl);
+
+    // Top face    (y+)
+    rlNormal3f(0, 1, 0);
+    rlTexCoord2f(0, uL);
+    rlVertex3f(position.x - hw, position.y + hh, position.z - hl);
+    rlTexCoord2f(0, 0);
+    rlVertex3f(position.x - hw, position.y + hh, position.z + hl);
+    rlTexCoord2f(uW, 0);
+    rlVertex3f(position.x + hw, position.y + hh, position.z + hl);
+    rlTexCoord2f(uW, uL);
+    rlVertex3f(position.x + hw, position.y + hh, position.z - hl);
+
+    // Bottom face (y-)
+    rlNormal3f(0, -1, 0);
+    rlTexCoord2f(uW, uL);
+    rlVertex3f(position.x - hw, position.y - hh, position.z - hl);
+    rlTexCoord2f(0, uL);
+    rlVertex3f(position.x + hw, position.y - hh, position.z - hl);
+    rlTexCoord2f(0, 0);
+    rlVertex3f(position.x + hw, position.y - hh, position.z + hl);
+    rlTexCoord2f(uW, 0);
+    rlVertex3f(position.x - hw, position.y - hh, position.z + hl);
+
+    // Right face  (x+)
+    rlNormal3f(1, 0, 0);
+    rlTexCoord2f(uL, 0);
+    rlVertex3f(position.x + hw, position.y - hh, position.z - hl);
+    rlTexCoord2f(uL, uH);
+    rlVertex3f(position.x + hw, position.y + hh, position.z - hl);
+    rlTexCoord2f(0, uH);
+    rlVertex3f(position.x + hw, position.y + hh, position.z + hl);
+    rlTexCoord2f(0, 0);
+    rlVertex3f(position.x + hw, position.y - hh, position.z + hl);
+
+    // Left face   (x-)
+    rlNormal3f(-1, 0, 0);
+    rlTexCoord2f(0, 0);
+    rlVertex3f(position.x - hw, position.y - hh, position.z - hl);
+    rlTexCoord2f(uL, 0);
+    rlVertex3f(position.x - hw, position.y - hh, position.z + hl);
+    rlTexCoord2f(uL, uH);
+    rlVertex3f(position.x - hw, position.y + hh, position.z + hl);
+    rlTexCoord2f(0, uH);
+    rlVertex3f(position.x - hw, position.y + hh, position.z - hl);
+
+    rlEnd();
+    rlSetTexture(0);
+}
 void draw_map(Map *map, Assets *assets) {
     for (int i = 0; i < map->sector_count; i++) {
         Sector *s = &map->sectors[i];
@@ -257,7 +339,9 @@ void draw_map(Map *map, Assets *assets) {
 
         Vector3 pos = {s->x + s->width / 2.0f, floor_mid,
                        s->y + s->height / 2.0f};
-        DrawCubeTexture(tex, pos, s->width, floor_top, s->height, WHITE);
+
+        DrawCubeTexturedTiled(tex, pos, s->width, floor_top, s->height, 1.f,
+                              WHITE);
 
         // Draw ceiling if enabled (unchanged)
         if (s->ceiling_enabled) {
