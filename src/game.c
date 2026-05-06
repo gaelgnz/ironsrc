@@ -3,6 +3,7 @@ game.c - Copyright (C) 2026 gaelgnz <gaelgnz06@gmail.com>
 Licensed under the GNU GPL v3. See LICENSE for details.
 */
 #include "game.h"
+#include "assets.h"
 #include "entity.h"
 #include "global.h"
 #include "map.h"
@@ -323,6 +324,7 @@ void game_loop(Global *global) {
     case IS_CHAT:
         if (IsKeyPressed(KEY_ESCAPE)) {
             state->input_state = IS_MOVING;
+
             break;
         }
         if (IsKeyPressed(KEY_BACKSPACE)) {
@@ -362,6 +364,7 @@ void game_loop(Global *global) {
             state->input_state = IS_CHAT;
         } else if (IsKeyPressed(KEY_ESCAPE)) {
             state->input_state = IS_MENU;
+            ShowCursor();
         }
         if (IsKeyDown(KEY_U)) {
             ShowCursor();
@@ -488,6 +491,15 @@ void game_loop(Global *global) {
                (Vector2){(float)cross_cx, (float)(cross_cy + cross_size)}, 3.f,
                WHITE);
 
+    Weapon *cur_weapon = &state->inventory[state->inventory_idx];
+
+    Texture2D tex = get_texture(&global->assets, cur_weapon->heldtexture);
+    int tex_w = tex.width;
+    int tex_h = tex.height;
+    Rectangle desired = (Rectangle){GetScreenWidth() / 4 * 2,
+                                    GetScreenHeight() - tex_h, tex_w, tex_h};
+    DrawTexturePro(tex, (Rectangle){0, 0, tex_w, tex_h}, desired,
+                   (Vector2){0, 0}, 0.f, WHITE);
     for (int i = 0; i < count; i++) {
         if (!snapshot[i].active || snapshot[i].type != ENT_PLAYER)
             continue;

@@ -32,6 +32,7 @@ typedef struct pktUserUpdate {
     Vector3 position;
     Vector3 current_velocity;
     uint8_t jump_requested;
+    // add Shot shots[16] here
 } pktUserUpdate;
 
 typedef struct pktUserJoin {

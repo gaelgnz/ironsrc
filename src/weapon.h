@@ -22,6 +22,12 @@ typedef struct Weapon {
     bool automatic;
 } Weapon;
 
+typedef struct Shot {
+    Vector3 start;
+    Vector3 end;
+    int damage;
+} Shot;
+
 Weapon revolver();
 
 #endif // !WEAPON_H
