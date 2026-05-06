@@ -7,6 +7,7 @@ Licensed under the GNU GPL v3. See LICENSE for details.
 #include "global.h"
 #include "map.h"
 #include "protocol.h"
+#include "raygui.h"
 #include "raylib.h"
 #include "raymath.h"
 #include "render.h"
@@ -566,10 +567,17 @@ void game_loop(Global *global) {
         break;
     case IS_MENU:
 
+        int offset = 0;
         DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(),
                       (Color){0, 0, 0, 200});
         DrawTextEx(global->assets.default_font, "IronSRC", Vector2Zero(), 50, 0,
                    (Color){255, 255, 255, 255});
+        offset += 50;
+        Rectangle rect = (Rectangle){0, offset, 30., 20.};
+        if (GuiButton(rect, "Exit")) {
+            global->gamemode = GM_MENU;
+            memset(&global->ingame, 0, sizeof(IngameState));
+        }
     }
     EndDrawing();
 

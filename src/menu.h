@@ -18,4 +18,6 @@ typedef struct MenuState {
 } MenuState;
 typedef struct Global Global;
 void menu_loop(Global *global);
+void menu_init(Global *global);
+;
 #endif // !MENU_H

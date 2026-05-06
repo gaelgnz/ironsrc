@@ -10,6 +10,13 @@ Licensed under the GNU GPL v3. See LICENSE for details.
 #include "raylib.h"
 #include <stdio.h>
 #include <string.h>
+void menu_init(Global *global) {
+
+    global->gamemode = GM_MENU;
+    strcpy(global->menu.ip, "127.0.0.1");
+    sprintf(global->menu.port, "%d", 4445);
+}
+
 void menu_loop(Global *global) {
     MenuState *state = &global->menu;
 

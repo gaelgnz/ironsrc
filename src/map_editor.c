@@ -151,6 +151,10 @@ void map_editor_loop(Global *global) {
             e.position = (Vector3){pos.x, 0, pos.y};
             s->map.entities[s->map.entity_count++] = e;
         }
+        if (IsKeyPressed(KEY_ESCAPE)) {
+            global->gamemode = GM_MENU;
+            memset(&global->editor, 0, sizeof(MapEditorState));
+        }
         if (s->creating) {
             if (IsMouseButtonReleased(MOUSE_RIGHT_BUTTON)) {
                 Vector2 snapped = snap_to_grid(world_mouse);

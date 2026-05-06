@@ -27,9 +27,8 @@ int main(void) {
     SetExitKey(-1);
 
     Global global = {0};
-    global.gamemode = GM_MENU;
-    strcpy(global.menu.ip, "127.0.0.1");
-    sprintf(global.menu.port, "%d", 4445);
+
+    menu_init(&global);
     global.assets = assets_load();
 
     global.assets.default_font = LoadFont(
