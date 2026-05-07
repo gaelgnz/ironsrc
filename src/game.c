@@ -77,7 +77,8 @@ void *client_recv_thread(void *arg) {
         memcpy(last_chat, upd->chat, sizeof(last_chat));
 
         global->ingame.shot_count = upd->shot_count;
-        memcpy(global->ingame.shots, upd->shots, upd->shot_count * sizeof(Shot));
+        memcpy(global->ingame.shots, upd->shots,
+               upd->shot_count * sizeof(Shot));
 
         pthread_mutex_unlock(&global->ingame.entity_mutex);
     }
@@ -291,7 +292,7 @@ static void apply_ground_friction(Vector3 *velocity, float friction,
 
     float drop = speed * friction * frametime;
     float newspeed = speed - drop;
-    if (newspeed < 0)
+    if (newspeed < 0.01)
         newspeed = 0;
     newspeed /= speed;
 
