@@ -38,6 +38,8 @@ typedef struct IngameState {
 
     char chat[2048];
 
+    pktUserUpdate updatePkt;
+
     Map *map;
 
     // audio

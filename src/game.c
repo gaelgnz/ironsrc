@@ -394,6 +394,12 @@ static Vector3 handle_input(IngameState *state, Vector3 forward, Vector3 right,
             wishdir.x += right.x;
             wishdir.z += right.z;
         }
+
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+            Weapon *cur_weapon = &state->inventory[state->inventory_idx];
+
+            shoot_weapon(cur_weapon);
+        }
         break;
     case IS_MENU:
         break;
@@ -628,6 +634,7 @@ static void render_frame(Global *global, IngameState *state, float ry, float rp,
                        (Vector2){20, sh - 120 + (found - 1 - i) * 26}, 15, 0,
                        (Color){255, 255, 255, 255});
         }
+
         break;
     case IS_MENU: {
         int offset = 0;
