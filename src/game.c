@@ -314,12 +314,6 @@ void game_loop(Global *global) {
     Vector3 wishdir = {0};
     float wishspeed = MAX_SPEED * speed_mult;
 
-    float wishlen = sqrtf(wishdir.x * wishdir.x + wishdir.z * wishdir.z);
-    if (wishlen > 0) {
-        wishdir.x /= wishlen;
-        wishdir.z /= wishlen;
-    }
-
     switch (state->input_state) {
     case IS_CHAT:
         if (IsKeyPressed(KEY_ESCAPE)) {
@@ -393,9 +387,71 @@ void game_loop(Global *global) {
         break;
     }
 
+    float wishlen = sqrtf(wishdir.x * wishdir.x + wishdir.z * wishdir.z);
+    if (wishlen > 0) {
+        wishdir.x /= wishlen;
+        wishdir.z /= wishlen;
+    }
+
+    state->velocity.y -= GRAVITY * frameTime;
+
+    static float blocked_x = 0, blocked_z = 0;
+
+    if (state->map) {
+        float prev_vx = state->velocity.x;
+        Vector3 new_pos = state->position;
+        new_pos.x += state->velocity.x * frameTime;
+        apply_sector_collision(&new_pos, &state->velocity, state->map,
+                               STEP_HEIGHT, 0);
+        if (fabsf(prev_vx) > 0.001f && state->velocity.x == 0)
+            blocked_x = prev_vx > 0 ? 1.0f : -1.0f;
+        else if (state->velocity.x * blocked_x < 0)
+            blocked_x = 0;
+        state->position.x = new_pos.x;
+
+        float prev_vz = state->velocity.z;
+        new_pos = state->position;
+        new_pos.z += state->velocity.z * frameTime;
+        apply_sector_collision(&new_pos, &state->velocity, state->map,
+                               STEP_HEIGHT, 0);
+        if (fabsf(prev_vz) > 0.001f && state->velocity.z == 0)
+            blocked_z = prev_vz > 0 ? 1.0f : -1.0f;
+        else if (state->velocity.z * blocked_z < 0)
+            blocked_z = 0;
+        state->position.z = new_pos.z;
+
+        new_pos = state->position;
+        new_pos.y += state->velocity.y * frameTime;
+        apply_sector_collision(&new_pos, &state->velocity, state->map,
+                               STEP_HEIGHT, 1);
+        state->position.y = new_pos.y;
+    } else {
+        blocked_x = blocked_z = 0;
+        state->position = Vector3Add(state->position,
+                                     Vector3Scale(state->velocity, frameTime));
+    }
+
+    if (state->position.y < 0.0f) {
+        state->position.y = 0.0f;
+        state->velocity.y = 0.0f;
+    }
+
     int on_ground = state->position.y <= 0.0f ||
                     (state->map && is_on_sector_floor(state->position,
                                                       state->map, STEP_HEIGHT));
+
+    uint8_t jump_requested = 0;
+    if (IsKeyPressed(KEY_SPACE)) {
+        if (on_ground) {
+            state->velocity.y = JUMP_VEL;
+            jump_requested = 1;
+        }
+    }
+
+    if (blocked_x && wishdir.x * blocked_x > 0)
+        wishdir.x = 0;
+    if (blocked_z && wishdir.z * blocked_z > 0)
+        wishdir.z = 0;
 
     if (on_ground) {
         apply_acceleration(&state->velocity, wishdir, wishspeed, GROUND_ACCEL,
@@ -404,32 +460,6 @@ void game_loop(Global *global) {
     } else {
         apply_acceleration(&state->velocity, wishdir, wishspeed, AIR_ACCEL,
                            frameTime);
-    }
-    uint8_t jump_requested = 0;
-    if (IsKeyPressed(KEY_SPACE)) {
-        int on_ground =
-            state->position.y <= 0.0f ||
-            (state->map &&
-             is_on_sector_floor(state->position, state->map, STEP_HEIGHT));
-        if (on_ground) {
-            state->velocity.y = JUMP_VEL;
-            jump_requested = 1;
-        }
-    }
-
-    state->velocity.y -= GRAVITY * frameTime;
-
-    state->position =
-        Vector3Add(state->position, Vector3Scale(state->velocity, frameTime));
-
-    if (state->map) {
-        apply_sector_collision(&state->position, &state->velocity, state->map,
-                               STEP_HEIGHT);
-    }
-
-    if (state->position.y < 0.0f) {
-        state->position.y = 0.0f;
-        state->velocity.y = 0.0f;
     }
 
     float hspeed = sqrtf(state->velocity.x * state->velocity.x +
@@ -454,7 +484,7 @@ void game_loop(Global *global) {
                               camera.position.y + sinf(rp),
                               camera.position.z + cosf(ry) * cosf(rp)};
     camera.up = (Vector3){0, 1, 0};
-    camera.fovy = 120.0f;
+    camera.fovy = 90.0f;
     camera.projection = CAMERA_PERSPECTIVE;
 
     BeginMode3D(camera);

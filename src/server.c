@@ -231,7 +231,7 @@ void sv_tick(Server *server, float dt) {
 
         // Floor collision
         apply_sector_collision(&e->position, &e->velocity,
-                               &server->map, STEP_HEIGHT);
+                               &server->map, STEP_HEIGHT, 1);
         if (e->position.y < 0.0f) {
             e->position.y = 0.0f;
             e->velocity.y = 0.0f;

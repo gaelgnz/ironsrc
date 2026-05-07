@@ -56,49 +56,66 @@ int is_on_sector_floor(Vector3 position, Map *map, float step_height) {
     return dy >= -step_height && dy <= step_height;
 }
 
-void apply_sector_collision(Vector3 *position, Vector3 *velocity, Map *map,
-                            float step_height) {
-    Sector *sector = get_sector_at(map, *position);
-    if (!sector)
-        return;
+static void push_out_of_sector(Vector3 *position, Vector3 *velocity,
+                                Sector *sector) {
+    float cx = sector->x + sector->width / 2.0f;
+    float cz = sector->y + sector->height / 2.0f;
+    float dx = position->x - cx;
+    float dz = position->z - cz;
+    float half_w = sector->width / 2.0f;
+    float half_h = sector->height / 2.0f;
 
-    float floor_y = sector->floor_height;
-    float dy = floor_y - position->y;
+    if (fabsf(dx) / half_w > fabsf(dz) / half_h) {
+        if (dx > 0)
+            position->x = sector->x + sector->width + 0.1f;
+        else
+            position->x = sector->x - 0.1f;
+        velocity->x = 0;
+    } else {
+        if (dz > 0)
+            position->z = sector->y + sector->height + 0.1f;
+        else
+            position->z = sector->y - 0.1f;
+        velocity->z = 0;
+    }
+}
 
-    if (dy > 0 && dy <= step_height) {
-        // Below floor, within step height → step up (stairs)
-        position->y = floor_y;
-        velocity->y = 0;
-    } else if (dy < 0 && dy >= -step_height && velocity->y <= 0) {
-        // Above floor, within step height, moving down → land on floor
-        position->y = floor_y;
-        velocity->y = 0;
-    } else if (position->y < floor_y) {
-        // Below floor and NOT within step range → collide horizontally
-        // Push player out of sector bounds
-        float cx = sector->x + sector->width / 2.0f;
-        float cz = sector->y + sector->height / 2.0f;
-        float dx = position->x - cx;
-        float dz = position->z - cz;
+int apply_sector_collision(Vector3 *position, Vector3 *velocity, Map *map,
+                            float step_height, int resolve_floor) {
+    int pushed = 0;
+    if (resolve_floor) {
+        Sector *primary = get_sector_at(map, *position);
+        if (primary) {
+            float floor_y = (float)primary->floor_height;
+            float dy = floor_y - position->y;
 
-        // Find closest edge
-        float half_w = sector->width / 2.0f;
-        float half_h = sector->height / 2.0f;
-
-        if (fabsf(dx) / half_w > fabsf(dz) / half_h) {
-            // Push out on X axis
-            if (dx > 0)
-                position->x = sector->x + sector->width + 0.1f;
-            else
-                position->x = sector->x - 0.1f;
-            velocity->x = 0;
-        } else {
-            // Push out on Z axis
-            if (dz > 0)
-                position->z = sector->y + sector->height + 0.1f;
-            else
-                position->z = sector->y - 0.1f;
-            velocity->z = 0;
+            if (dy > 0 && dy <= step_height) {
+                position->y = floor_y;
+                velocity->y = 0;
+                return 0;
+            } else if (dy < 0 && dy >= -step_height && velocity->y <= 0) {
+                position->y = floor_y;
+                velocity->y = 0;
+                return 0;
+            }
         }
     }
+
+    for (int iter = 0; iter < 4; iter++) {
+        int any = 0;
+        for (int i = 0; i < map->sector_count; i++) {
+            Sector *s = &map->sectors[i];
+            if (position->x >= s->x && position->x <= s->x + s->width &&
+                position->z >= s->y && position->z <= s->y + s->height) {
+                if (position->y < (float)s->floor_height) {
+                    push_out_of_sector(position, velocity, s);
+                    any = 1;
+                    pushed = 1;
+                }
+            }
+        }
+        if (!any)
+            break;
+    }
+    return pushed;
 }
