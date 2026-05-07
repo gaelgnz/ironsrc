@@ -24,7 +24,7 @@ Licensed under the GNU GPL v3. See LICENSE for details.
 #include <unistd.h>
 #define GROUND_ACCEL 10.0f
 #define AIR_ACCEL 2.0f
-#define MAX_SPEED 10.0f
+#define MAX_SPEED 7.0f
 #define GROUND_FRICTION 8.0f
 #define GRAVITY 20.0f
 #define JUMP_VEL 10.0f
@@ -32,6 +32,8 @@ Licensed under the GNU GPL v3. See LICENSE for details.
 #define CROUCH_CAMERA_HEIGHT 0.5f
 #define NORMAL_CAMERA_HEIGHT 1.0f
 #define STEP_HEIGHT 1.0f
+
+static float blocked_x = 0, blocked_z = 0;
 
 typedef struct {
     Global *global;
@@ -252,8 +254,8 @@ static int has_wall_in_dir(Vector3 pos, Map *map, Vector3 dir) {
     test.z += dir.z * 0.2f;
     for (int i = 0; i < map->sector_count; i++) {
         Sector *s = &map->sectors[i];
-        if (test.x >= s->x && test.x <= s->x + s->width &&
-            test.z >= s->y && test.z <= s->y + s->height) {
+        if (test.x >= s->x && test.x <= s->x + s->width && test.z >= s->y &&
+            test.z <= s->y + s->height) {
             if (test.y < (float)s->floor_height)
                 return 1;
         }
@@ -294,15 +296,8 @@ static void apply_ground_friction(Vector3 *velocity, float friction,
     velocity->z *= newspeed;
 }
 
-void game_loop(Global *global) {
-    IngameState *state = &global->ingame;
-
-    float frameTime = GetFrameTime();
-    if (frameTime > 0.25f)
-        frameTime = 0.25f;
-
-    float ry = state->yaw * DEG2RAD;
-    float rp = state->pitch * DEG2RAD;
+static void handle_camera(IngameState *state, float *ry, float *rp,
+                          Vector3 *forward, Vector3 *right) {
     Vector2 mouseDelta = GetMouseDelta();
     float sensitivity = 0.1f;
 
@@ -315,27 +310,32 @@ void game_loop(Global *global) {
     if (state->pitch < -89.0f)
         state->pitch = -89.0f;
 
-    Vector3 forward = {sinf(state->yaw * DEG2RAD), 0,
-                       cosf(state->yaw * DEG2RAD)};
-    Vector3 right = {-cosf(state->yaw * DEG2RAD), 0,
-                     sinf(state->yaw * DEG2RAD)};
+    *ry = state->yaw * DEG2RAD;
+    *rp = state->pitch * DEG2RAD;
 
+    forward->x = sinf(*ry);
+    forward->z = cosf(*ry);
+    right->x = -cosf(*ry);
+    right->z = sinf(*ry);
+}
+
+static Vector3 handle_input(IngameState *state, Vector3 forward, Vector3 right,
+                            float *wishspeed, float *camera_height) {
     int crouch_pressed =
         IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
     state->crouching = crouch_pressed;
 
     float speed_mult = state->crouching ? CROUCH_SPEED_MULT : 1.0f;
-    float camera_height =
+    *camera_height =
         state->crouching ? CROUCH_CAMERA_HEIGHT : NORMAL_CAMERA_HEIGHT;
+    *wishspeed = MAX_SPEED * speed_mult;
 
     Vector3 wishdir = {0};
-    float wishspeed = MAX_SPEED * speed_mult;
 
     switch (state->input_state) {
     case IS_CHAT:
         if (IsKeyPressed(KEY_ESCAPE)) {
             state->input_state = IS_MOVING;
-
             break;
         }
         if (IsKeyPressed(KEY_BACKSPACE)) {
@@ -351,19 +351,16 @@ void game_loop(Global *global) {
             state->message_len++;
             state->message[state->message_len] = '\0';
         }
-        printf("%s\n", state->message);
-
         if (IsKeyPressed(KEY_ENTER)) {
             state->input_state = IS_MOVING;
             uint8_t um_buf[sizeof(Packet) + sizeof(pktUserMessage)];
             Packet *um_pkt = (Packet *)um_buf;
             um_pkt->type = PKT_USER_MESSAGE;
             pktUserMessage *um_data = (pktUserMessage *)um_pkt->data;
-            memcpy(um_data->message, global->ingame.message, sizeof(char[32]));
+            memcpy(um_data->message, state->message, sizeof(char[32]));
 
-            sendto(global->ingame.sockfd, um_buf, sizeof(um_buf), 0,
-                   (struct sockaddr *)&global->ingame.sv_addr,
-                   sizeof(global->ingame.sv_addr));
+            sendto(state->sockfd, um_buf, sizeof(um_buf), 0,
+                   (struct sockaddr *)&state->sv_addr, sizeof(state->sv_addr));
 
             state->message[0] = '\0';
             state->message_len = 0;
@@ -371,18 +368,16 @@ void game_loop(Global *global) {
         break;
 
     case IS_MOVING:
-        if (IsKeyPressed(KEY_T)) {
+        if (IsKeyPressed(KEY_T))
             state->input_state = IS_CHAT;
-        } else if (IsKeyPressed(KEY_ESCAPE)) {
+        else if (IsKeyPressed(KEY_ESCAPE)) {
             state->input_state = IS_MENU;
             ShowCursor();
         }
-        if (IsKeyDown(KEY_U)) {
+        if (IsKeyDown(KEY_U))
             ShowCursor();
-        }
-        if (IsKeyDown(KEY_I)) {
+        if (IsKeyDown(KEY_I))
             DisableCursor();
-        }
         if (IsKeyDown(KEY_W)) {
             wishdir.x += forward.x;
             wishdir.z += forward.z;
@@ -409,10 +404,12 @@ void game_loop(Global *global) {
         wishdir.x /= wishlen;
         wishdir.z /= wishlen;
     }
+    return wishdir;
+}
 
+static uint8_t move_player(IngameState *state, Vector3 wishdir, float wishspeed,
+                           float frameTime) {
     state->velocity.y -= GRAVITY * frameTime;
-
-    static float blocked_x = 0, blocked_z = 0;
 
     if (state->map) {
         float prev_vx = state->velocity.x;
@@ -495,12 +492,17 @@ void game_loop(Global *global) {
         state->velocity.z *= scale;
     }
 
+    return jump_requested;
+}
+
+static void render_frame(Global *global, IngameState *state, float ry, float rp,
+                         float camera_height) {
+    int sw = GetScreenWidth();
+    int sh = GetScreenHeight();
+
     BeginDrawing();
     ClearBackground(BLUE);
     DrawFPS(10, 10);
-
-    int sw = GetScreenWidth();
-    int sh = GetScreenHeight();
 
     Camera3D camera = {0};
     camera.position =
@@ -528,10 +530,8 @@ void game_loop(Global *global) {
     }
     EndMode3D();
 
-    int cross_size = 15;
-    int cross_gap = 5;
-    int cross_cx = sw / 2;
-    int cross_cy = sh / 2;
+    int cross_size = 15, cross_gap = 5;
+    int cross_cx = sw / 2, cross_cy = sh / 2;
 
     DrawLineEx((Vector2){(float)(cross_cx - cross_size), (float)cross_cy},
                (Vector2){(float)(cross_cx - cross_gap), (float)cross_cy}, 3.f,
@@ -547,14 +547,12 @@ void game_loop(Global *global) {
                WHITE);
 
     Weapon *cur_weapon = &state->inventory[state->inventory_idx];
-
     Texture2D tex = get_texture(&global->assets, cur_weapon->heldtexture);
-    int tex_w = tex.width;
-    int tex_h = tex.height;
-    Rectangle desired = (Rectangle){GetScreenWidth() / 4 * 2,
-                                    GetScreenHeight() - tex_h, tex_w, tex_h};
+    int tex_w = tex.width, tex_h = tex.height;
+    Rectangle desired = (Rectangle){sw / 4 * 2, sh - tex_h, tex_w, tex_h};
     DrawTexturePro(tex, (Rectangle){0, 0, tex_w, tex_h}, desired,
                    (Vector2){0, 0}, 0.f, WHITE);
+
     for (int i = 0; i < count; i++) {
         if (!snapshot[i].active || snapshot[i].type != ENT_PLAYER)
             continue;
@@ -563,7 +561,7 @@ void game_loop(Global *global) {
                                 snapshot[i].player.username);
     }
 
-    const char *chat = global->ingame.chat;
+    const char *chat = state->chat;
     const char *chat_lines[3] = {NULL, NULL, NULL};
     const char *p = chat + strlen(chat);
     int found = 0;
@@ -576,14 +574,9 @@ void game_loop(Global *global) {
         chat_lines[found++] = chat;
 
     switch (state->input_state) {
-    case IS_CHAT:
-        int fontSize = 22;
-        int padX = 10;
-        int padY = 8;
-        int lineH = 26;
-        int maxLines = 5;
-        int boxW = sw / 2;
-        int boxX = 20;
+    case IS_CHAT: {
+        int fontSize = 22, padX = 10, padY = 8, lineH = 26, maxLines = 5;
+        int boxW = sw / 2, boxX = 20;
         int inputH = fontSize + padY * 2;
         int chatAreaH = lineH * maxLines + padY;
         int totalH = chatAreaH + inputH + 4;
@@ -607,9 +600,10 @@ void game_loop(Global *global) {
             const char *end = strchr(cl[i], '\n');
             int len = end ? (int)(end - cl[i]) : (int)strlen(cl[i]);
             snprintf(line, sizeof(line), "%.*s", len, cl[i]);
-            int lineY = boxY + padY + (fc - 1 - i) * lineH;
-            DrawTextEx(global->assets.default_font, line,
-                       (Vector2){boxX + padX, lineY}, 20, 0, WHITE);
+            DrawTextEx(
+                global->assets.default_font, line,
+                (Vector2){boxX + padX, boxY + padY + (fc - 1 - i) * lineH}, 20,
+                0, WHITE);
         }
 
         int inputY = boxY + chatAreaH + 4;
@@ -622,6 +616,7 @@ void game_loop(Global *global) {
         DrawTextEx(global->assets.default_font, preview,
                    (Vector2){boxX + padX, inputY + padY}, fontSize, 0, WHITE);
         break;
+    }
     case IS_MOVING:
         for (int i = found - 1; i >= 0; i--) {
             char line[128];
@@ -634,35 +629,53 @@ void game_loop(Global *global) {
                        (Color){255, 255, 255, 255});
         }
         break;
-    case IS_MENU:
-
+    case IS_MENU: {
         int offset = 0;
-        DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(),
-                      (Color){0, 0, 0, 200});
+        DrawRectangle(0, 0, sw, sh, (Color){0, 0, 0, 200});
         DrawTextEx(global->assets.default_font, "IronSRC", Vector2Zero(), 50, 0,
                    (Color){255, 255, 255, 255});
         offset += 50;
         Rectangle rect = (Rectangle){0, offset, 30., 20.};
         if (GuiButton(rect, "Exit")) {
             global->gamemode = GM_MENU;
-            memset(&global->ingame, 0, sizeof(IngameState));
+            memset(state, 0, sizeof(IngameState));
         }
+        break;
+    }
     }
     EndDrawing();
+}
 
-    pktUserUpdate user_update = {0};
-    user_update.current_velocity = state->velocity;
-    user_update.position = state->position;
-    user_update.jump_requested = jump_requested;
-
+static void send_player_update(IngameState *state, uint8_t jump_requested) {
     uint8_t uu_buf[sizeof(Packet) + sizeof(pktUserUpdate)];
     Packet *uu_pkt = (Packet *)uu_buf;
     uu_pkt->type = PKT_USER_UPDATE;
     pktUserUpdate *uu_data = (pktUserUpdate *)uu_pkt->data;
-    uu_data->current_velocity = global->ingame.velocity;
-    uu_data->position = global->ingame.position;
+    uu_data->current_velocity = state->velocity;
+    uu_data->position = state->position;
     uu_data->jump_requested = jump_requested;
-    sendto(global->ingame.sockfd, uu_buf, sizeof(uu_buf), 0,
-           (struct sockaddr *)&global->ingame.sv_addr,
-           sizeof(global->ingame.sv_addr));
+    sendto(state->sockfd, uu_buf, sizeof(uu_buf), 0,
+           (struct sockaddr *)&state->sv_addr, sizeof(state->sv_addr));
+}
+
+void game_loop(Global *global) {
+    IngameState *state = &global->ingame;
+
+    float frameTime = GetFrameTime();
+    if (frameTime > 0.25f)
+        frameTime = 0.25f;
+
+    float ry, rp;
+    Vector3 forward, right;
+    handle_camera(state, &ry, &rp, &forward, &right);
+
+    float wishspeed, camera_height;
+    Vector3 wishdir =
+        handle_input(state, forward, right, &wishspeed, &camera_height);
+
+    uint8_t jump_requested = move_player(state, wishdir, wishspeed, frameTime);
+
+    render_frame(global, state, ry, rp, camera_height);
+
+    send_player_update(state, jump_requested);
 }
