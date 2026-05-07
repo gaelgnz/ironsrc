@@ -259,8 +259,9 @@ void map_editor_loop(Global *global) {
             tex, (Rectangle){0, 0, tex.width, tex.height},
             (Rectangle){sector->x, sector->y, sector->width, sector->height},
             (Vector2){0, 0}, 0.0f, (Color){255, 255, 255, t});
-        DrawRectangleLines(sector->x, sector->y, sector->width, sector->height,
-                           (Color){255, 255, 255, t});
+        DrawRectangleLinesEx(
+            (Rectangle){sector->x, sector->y, sector->width, sector->height},
+            0.3f, (Color){255, 255, 255, t});
         if (i == s->selected) {
             DrawRectangle(sector->x + sector->width - HANDLE_SIZE,
                           sector->y + sector->height - HANDLE_SIZE,
@@ -282,7 +283,7 @@ void map_editor_loop(Global *global) {
         int y = (int)fminf(s->create_start.y, snapped.y);
         int w = (int)fabsf(snapped.x - s->create_start.x);
         int h = (int)fabsf(snapped.y - s->create_start.y);
-        DrawRectangleLines(x, y, w, h, GREEN);
+        DrawRectangleLinesEx((Rectangle){x, y, w, h}, 0.3, GREEN);
     }
 
     EndMode2D();
