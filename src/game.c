@@ -244,6 +244,23 @@ void host() {
     usleep(500000); // 500ms
 }
 
+static int has_wall_in_dir(Vector3 pos, Map *map, Vector3 dir) {
+    if (dir.x == 0 && dir.z == 0)
+        return 0;
+    Vector3 test = pos;
+    test.x += dir.x * 0.2f;
+    test.z += dir.z * 0.2f;
+    for (int i = 0; i < map->sector_count; i++) {
+        Sector *s = &map->sectors[i];
+        if (test.x >= s->x && test.x <= s->x + s->width &&
+            test.z >= s->y && test.z <= s->y + s->height) {
+            if (test.y < (float)s->floor_height)
+                return 1;
+        }
+    }
+    return 0;
+}
+
 static void apply_acceleration(Vector3 *velocity, Vector3 wishdir,
                                float wishspeed, float accel, float frametime) {
     float currentspeed = Vector3DotProduct(*velocity, wishdir);
@@ -407,6 +424,10 @@ void game_loop(Global *global) {
             blocked_x = prev_vx > 0 ? 1.0f : -1.0f;
         else if (state->velocity.x * blocked_x < 0)
             blocked_x = 0;
+        else if (blocked_x && state->velocity.x == 0 &&
+                 !has_wall_in_dir(state->position, state->map,
+                                  (Vector3){blocked_x, 0, 0}))
+            blocked_x = 0;
         state->position.x = new_pos.x;
 
         float prev_vz = state->velocity.z;
@@ -417,6 +438,10 @@ void game_loop(Global *global) {
         if (fabsf(prev_vz) > 0.001f && state->velocity.z == 0)
             blocked_z = prev_vz > 0 ? 1.0f : -1.0f;
         else if (state->velocity.z * blocked_z < 0)
+            blocked_z = 0;
+        else if (blocked_z && state->velocity.z == 0 &&
+                 !has_wall_in_dir(state->position, state->map,
+                                  (Vector3){0, 0, blocked_z}))
             blocked_z = 0;
         state->position.z = new_pos.z;
 
