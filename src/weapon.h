@@ -28,6 +28,7 @@ typedef struct Shot {
     Vector3 start;
     Vector3 end;
     int damage;
+    int owner_client_id;
 } Shot;
 
 Weapon revolver();

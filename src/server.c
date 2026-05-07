@@ -186,6 +186,7 @@ void sv_receive_update(Server *server, int client_id, pktUserUpdate cmd) {
     server->last_client_updates[client_id] = cmd;
 
     for (int i = 0; i < cmd.shot_count && server->shot_count < MAX_SHOTS; i++) {
+        cmd.shots[i].owner_client_id = client_id;
         server->shots[server->shot_count++] = cmd.shots[i];
     }
 }
@@ -203,22 +204,124 @@ void sv_init(Server *server) {
     server->entity_count = 1;
 }
 
+static int shot_hits_entity(Shot *shot, Entity *entity) {
+    Vector3 ray_dir = Vector3Subtract(shot->end, shot->start);
+    float ray_len = Vector3Length(ray_dir);
+    if (ray_len < 0.001f) return 0;
+    ray_dir = Vector3Normalize(ray_dir);
+
+    Vector3 box_min = {entity->position.x - 0.3f, entity->position.y, entity->position.z - 0.3f};
+    Vector3 box_max = {entity->position.x + 0.3f, entity->position.y + 1.8f, entity->position.z + 0.3f};
+
+    float tmin = -INFINITY, tmax = INFINITY;
+    for (int axis = 0; axis < 3; axis++) {
+        float origin = ((float *)&shot->start)[axis];
+        float dir = ((float *)&ray_dir)[axis];
+        float min = ((float *)&box_min)[axis];
+        float max = ((float *)&box_max)[axis];
+
+        if (fabsf(dir) < 0.0001f) {
+            if (origin < min || origin > max) return 0;
+        } else {
+            float t1 = (min - origin) / dir;
+            float t2 = (max - origin) / dir;
+            if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
+            if (t1 > tmin) tmin = t1;
+            if (t2 < tmax) tmax = t2;
+            if (tmin > tmax) return 0;
+        }
+    }
+    return tmin >= 0.0f && tmin <= ray_len;
+}
+
 void sv_tick(Server *server, float dt) {
+    // Process new shots: damage, death, kill messages
+    for (uint16_t i = server->last_processed_shot; i < server->shot_count; i++) {
+        Shot *shot = &server->shots[i];
+        if (shot->owner_client_id < 0)
+            continue;
+
+        for (int e = 0; e < server->entity_count; e++) {
+            Entity *entity = &server->entities[e];
+            if (!entity->active || entity->type != ENT_PLAYER)
+                continue;
+            if (entity->client_id == shot->owner_client_id)
+                continue;
+            if (entity->player.health <= 0)
+                continue;
+            if (!shot_hits_entity(shot, entity))
+                continue;
+
+            entity->player.health -= shot->damage;
+
+            if (entity->player.health <= 0) {
+                entity->player.health = 0;
+                entity->velocity = (Vector3){0, 0, 0};
+
+                const char *killer = server->clients[shot->owner_client_id].username;
+                const char *victim = entity->player.username;
+                const char *verbs[] = {
+                    "decimated", "turned to ashes", "obliterated",
+                    "annihilated", "demolished", "shattered",
+                };
+                const char *verb = verbs[rand() % (sizeof(verbs) / sizeof(verbs[0]))];
+                char msg[128];
+                snprintf(msg, sizeof(msg), "%s %s %s\n", killer, verb, victim);
+                strncat(server->chat, msg,
+                        sizeof(server->chat) - strlen(server->chat) - 1);
+
+                if (entity->client_id >= 0) {
+                    server->clients[entity->client_id].dead = 1;
+                    server->clients[entity->client_id].death_time = get_time();
+                }
+            }
+        }
+    }
+    server->last_processed_shot = server->shot_count;
+
+    // Respawn dead players after 3 seconds
+    double now = get_time();
+    for (int c = 0; c < server->client_count; c++) {
+        if (!server->clients[c].dead)
+            continue;
+        if (now - server->clients[c].death_time < 3.0)
+            continue;
+
+        server->clients[c].dead = 0;
+        Entity *e = entity_from_client_id(server, c);
+        if (!e) continue;
+        e->player.health = 67;
+        e->velocity = (Vector3){0, 0, 0};
+        for (int i = 0; i < server->map.entity_count; i++) {
+            Entity *me = &server->map.entities[i];
+            if (me->active && me->type == ENT_PLAYER_START) {
+                e->position = me->position;
+                break;
+            }
+        }
+        // Reset stored update so it doesn't overwrite spawn position
+        server->last_client_updates[c].position = e->position;
+        server->last_client_updates[c].current_velocity = (Vector3){0, 0, 0};
+    }
+
+    // Move entities
     for (int i = 0; i < server->entity_count; i++) {
         Entity *e = &server->entities[i];
         if (!e->active)
             continue;
 
+        // Dead players are frozen in place
+        if (e->client_id != NOT_PLAYER && server->clients[e->client_id].dead)
+            continue;
+
         if (e->client_id != NOT_PLAYER) {
             pktUserUpdate upd = server->last_client_updates[e->client_id];
 
-            // Trust XZ from client only, never Y
             e->position.x = upd.position.x;
             e->position.z = upd.position.z;
             e->velocity.x = upd.current_velocity.x;
             e->velocity.z = upd.current_velocity.z;
 
-            // Allow jump: client explicitly requested it and entity is on floor
             int on_floor =
                 e->position.y <= 0.0f ||
                 is_on_sector_floor(e->position, &server->map, STEP_HEIGHT);
@@ -228,14 +331,12 @@ void sv_tick(Server *server, float dt) {
             }
         }
 
-        // Server owns Y
         e->velocity.y -= 20.0f * dt;
         e->velocity.x *= 0.8f;
         e->velocity.z *= 0.8f;
 
         e->position = Vector3Add(e->position, Vector3Scale(e->velocity, dt));
 
-        // Floor collision
         apply_sector_collision(&e->position, &e->velocity,
                                &server->map, STEP_HEIGHT, 1);
         if (e->position.y < 0.0f) {

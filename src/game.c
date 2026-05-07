@@ -530,6 +530,22 @@ static void render_frame(Global *global, IngameState *state, float ry, float rp,
     int sw = GetScreenWidth();
     int sh = GetScreenHeight();
 
+    // Death cam tween
+    float death_t = 0.0f;
+    if (state->myself.player.health <= 0) {
+        if (state->death_start == 0.0)
+            state->death_start = GetTime();
+        float elapsed = GetTime() - state->death_start;
+        death_t = fminf(elapsed / 3.0f, 1.0f);
+        camera_height *= 1.0f - death_t;
+    } else {
+        if (state->death_start != 0.0) {
+            state->position = state->myself.position;
+            state->velocity = (Vector3){0, 0, 0};
+        }
+        state->death_start = 0.0;
+    }
+
     BeginDrawing();
     ClearBackground(BLUE);
     DrawFPS(10, 10);
@@ -559,7 +575,28 @@ static void render_frame(Global *global, IngameState *state, float ry, float rp,
         render_net_entity(&camera, &global->assets, snapshot[i], global);
     }
     draw_shots(state->shots, state->shot_count);
+
+    // Debug: draw player hitboxes
+    for (int i = 0; i < count; i++) {
+        if (!snapshot[i].active || snapshot[i].type != ENT_PLAYER)
+            continue;
+        Vector3 box_center = {snapshot[i].position.x, snapshot[i].position.y + 0.9f, snapshot[i].position.z};
+        DrawCubeWires(box_center, 0.6f, 1.8f, 0.6f, GREEN);
+    }
+    DrawCubeWires((Vector3){state->position.x, state->position.y + 0.9f, state->position.z},
+                  0.6f, 1.8f, 0.6f, GREEN);
+
     EndMode3D();
+
+    if (death_t > 0.0f) {
+        DrawRectangle(0, 0, sw, sh, (Color){255, 0, 0, (unsigned char)(80 * death_t)});
+        const char *died = "YOU DIED";
+        int died_font = 60;
+        Vector2 died_size = MeasureTextEx(global->assets.default_font, died, died_font, 0);
+        DrawTextEx(global->assets.default_font, died,
+                   (Vector2){(sw - died_size.x) / 2.0f, (sh - died_size.y) / 2.0f - 40},
+                   died_font, 0, RED);
+    }
 
     int cross_size = 15, cross_gap = 5;
     int cross_cx = sw / 2, cross_cy = sh / 2;
@@ -702,13 +739,17 @@ void game_loop(Global *global) {
     Vector3 forward, right;
     handle_camera(state, &ry, &rp, &forward, &right);
 
-    float wishspeed, camera_height;
-    Vector3 wishdir =
-        handle_input(state, forward, right, &wishspeed, &camera_height);
+    float wishspeed = 0, camera_height = NORMAL_CAMERA_HEIGHT;
+    Vector3 wishdir = {0};
+    uint8_t jump_requested = 0;
 
-    uint8_t jump_requested = move_player(state, wishdir, wishspeed, frameTime);
+    if (state->myself.player.health > 0) {
+        wishdir = handle_input(state, forward, right, &wishspeed, &camera_height);
+        jump_requested = move_player(state, wishdir, wishspeed, frameTime);
+    }
 
     render_frame(global, state, ry, rp, camera_height);
 
-    send_player_update(state, jump_requested);
+    if (state->myself.player.health > 0)
+        send_player_update(state, jump_requested);
 }

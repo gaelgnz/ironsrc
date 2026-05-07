@@ -54,6 +54,8 @@ typedef struct IngameState {
 
     Shot shots[MAX_SHOTS];
     uint16_t shot_count;
+
+    double death_start;
 } IngameState;
 
 typedef struct Global Global;

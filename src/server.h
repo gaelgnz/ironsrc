@@ -29,6 +29,9 @@ typedef struct Client {
     bool active;
     time_t last_seen;
     struct sockaddr_in sockaddr;
+
+    int dead;
+    double death_time;
 } Client;
 typedef struct Server {
     Entity entities[MAX_ENTITIES];
@@ -45,6 +48,7 @@ typedef struct Server {
 
     Shot shots[MAX_SHOTS];
     uint16_t shot_count;
+    uint16_t last_processed_shot;
 
     Map map;
 } Server;
