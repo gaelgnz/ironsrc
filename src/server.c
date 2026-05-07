@@ -42,6 +42,8 @@ void sv_broadcast(Server *server, int listenfd) {
     pkt->type = PKT_SERVER_UPDATE;
     pktServerUpdate *upd = (pktServerUpdate *)pkt->data;
     upd->tick = server->tick;
+    upd->shot_count = server->shot_count;
+    memcpy(upd->shots, server->shots, server->shot_count * sizeof(Shot));
 
     for (int c = 0; c < server->client_count; c++) {
         Entity *me = entity_from_client_id(server, c);
@@ -182,6 +184,10 @@ void sv_receive_update(Server *server, int client_id, pktUserUpdate cmd) {
     if (cmd.jump_requested)
         server->jump_pending[client_id] = 1;
     server->last_client_updates[client_id] = cmd;
+
+    for (int i = 0; i < cmd.shot_count && server->shot_count < MAX_SHOTS; i++) {
+        server->shots[server->shot_count++] = cmd.shots[i];
+    }
 }
 
 void sv_init(Server *server) {

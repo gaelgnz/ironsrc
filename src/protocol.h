@@ -9,11 +9,13 @@ Licensed under the GNU GPL v3. See LICENSE for details.
 #include "map.h"
 #include "raylib.h"
 #include "stdint.h"
+#include "weapon.h"
 #include <stddef.h>
 
 #define MAX_MSG_LEN 32
 #define NOT_CLIENT -1
 #define MAX_USERNAME_LEN 12
+#define MAX_SHOTS 1024
 typedef enum PacketType {
     PKT_USER_UPDATE,
     PKT_USER_JOIN,
@@ -32,7 +34,8 @@ typedef struct pktUserUpdate {
     Vector3 position;
     Vector3 current_velocity;
     uint8_t jump_requested;
-    // add Shot shots[16] here
+    Shot shots[16];
+    uint8_t shot_count;
 } pktUserUpdate;
 
 typedef struct pktUserJoin {
@@ -51,6 +54,9 @@ typedef struct pktServerUpdate {
     Entity your_player;
     int entity_count;
     uint32_t tick;
+
+    Shot shots[MAX_SHOTS];
+    uint16_t shot_count;
 } pktServerUpdate;
 
 typedef struct pktUserMessage {

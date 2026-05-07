@@ -326,6 +326,12 @@ void DrawCubeTexturedTiled(Texture2D tex, Vector3 position, float width,
     rlEnd();
     rlSetTexture(0);
 }
+void draw_shots(Shot *shots, uint16_t count) {
+    for (uint16_t i = 0; i < count; i++) {
+        DrawLine3D(shots[i].start, shots[i].end, YELLOW);
+    }
+}
+
 void draw_map(Map *map, Assets *assets) {
     for (int i = 0; i < map->sector_count; i++) {
         Sector *s = &map->sectors[i];

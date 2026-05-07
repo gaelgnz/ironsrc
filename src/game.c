@@ -76,6 +76,9 @@ void *client_recv_thread(void *arg) {
         strcpy(global->ingame.chat, upd->chat);
         memcpy(last_chat, upd->chat, sizeof(last_chat));
 
+        global->ingame.shot_count = upd->shot_count;
+        memcpy(global->ingame.shots, upd->shots, upd->shot_count * sizeof(Shot));
+
         pthread_mutex_unlock(&global->ingame.entity_mutex);
     }
     return NULL;
@@ -319,6 +322,28 @@ static void handle_camera(IngameState *state, float *ry, float *rp,
     right->z = sinf(*ry);
 }
 
+static void shoot_weapon(IngameState *state, Weapon *weapon) {
+    if (state->updatePkt.shot_count >= 16 || weapon->ammo <= 0)
+        return;
+
+    printf("shot %d\n", weapon->ammo);
+    weapon->ammo--;
+    float camera_height =
+        state->crouching ? CROUCH_CAMERA_HEIGHT : NORMAL_CAMERA_HEIGHT;
+    Vector3 start = Vector3Add(state->position, (Vector3){0, camera_height, 0});
+
+    float ry = state->yaw * DEG2RAD;
+    float rp = state->pitch * DEG2RAD;
+    Vector3 forward = {sinf(ry) * cosf(rp), sinf(rp), cosf(ry) * cosf(rp)};
+    Vector3 end = Vector3Add(start, Vector3Scale(forward, 1000.0f));
+
+    state->updatePkt.shots[state->updatePkt.shot_count++] = (Shot){
+        .start = start,
+        .end = end,
+        .damage = 34,
+    };
+}
+
 static Vector3 handle_input(IngameState *state, Vector3 forward, Vector3 right,
                             float *wishspeed, float *camera_height) {
     int crouch_pressed =
@@ -396,9 +421,7 @@ static Vector3 handle_input(IngameState *state, Vector3 forward, Vector3 right,
         }
 
         if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-            Weapon *cur_weapon = &state->inventory[state->inventory_idx];
-
-            shoot_weapon(cur_weapon);
+            shoot_weapon(state, &state->inventory[state->inventory_idx]);
         }
         break;
     case IS_MENU:
@@ -534,6 +557,7 @@ static void render_frame(Global *global, IngameState *state, float ry, float rp,
             continue;
         render_net_entity(&camera, &global->assets, snapshot[i], global);
     }
+    draw_shots(state->shots, state->shot_count);
     EndMode3D();
 
     int cross_size = 15, cross_gap = 5;
@@ -657,12 +681,13 @@ static void send_player_update(IngameState *state, uint8_t jump_requested) {
     uint8_t uu_buf[sizeof(Packet) + sizeof(pktUserUpdate)];
     Packet *uu_pkt = (Packet *)uu_buf;
     uu_pkt->type = PKT_USER_UPDATE;
-    pktUserUpdate *uu_data = (pktUserUpdate *)uu_pkt->data;
-    uu_data->current_velocity = state->velocity;
-    uu_data->position = state->position;
-    uu_data->jump_requested = jump_requested;
+    state->updatePkt.position = state->position;
+    state->updatePkt.current_velocity = state->velocity;
+    state->updatePkt.jump_requested = jump_requested;
+    memcpy(uu_pkt->data, &state->updatePkt, sizeof(state->updatePkt));
     sendto(state->sockfd, uu_buf, sizeof(uu_buf), 0,
            (struct sockaddr *)&state->sv_addr, sizeof(state->sv_addr));
+    state->updatePkt.shot_count = 0;
 }
 
 void game_loop(Global *global) {

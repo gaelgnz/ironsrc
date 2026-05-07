@@ -51,6 +51,9 @@ typedef struct IngameState {
 
     // crouch state
     int crouching;
+
+    Shot shots[MAX_SHOTS];
+    uint16_t shot_count;
 } IngameState;
 
 typedef struct Global Global;

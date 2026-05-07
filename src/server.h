@@ -43,6 +43,9 @@ typedef struct Server {
 
     char chat[CHAT_LEN];
 
+    Shot shots[MAX_SHOTS];
+    uint16_t shot_count;
+
     Map map;
 } Server;
 
