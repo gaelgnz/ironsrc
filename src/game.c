@@ -53,6 +53,7 @@ void *client_recv_thread(void *arg) {
     uint8_t buf[sizeof(Packet) + sizeof(pktServerUpdate)];
     char last_chat[sizeof(global->ingame.chat)];
     memset(last_chat, 0, sizeof(last_chat));
+    int last_health = 67;
 
     for (;;) {
         int n = recv(global->ingame.sockfd, buf, sizeof(buf), 0);
@@ -65,6 +66,10 @@ void *client_recv_thread(void *arg) {
 
         pktServerUpdate *upd = (pktServerUpdate *)pkt->data;
         pthread_mutex_lock(&global->ingame.entity_mutex);
+
+        if (upd->your_player.player.health < last_health)
+            global->ingame.damage_taken = 1;
+        last_health = upd->your_player.player.health;
 
         memcpy(global->ingame.entities, upd->entities, sizeof(upd->entities));
         global->ingame.myself = upd->your_player;
@@ -217,9 +222,12 @@ void connect_sv(Global *global) {
     global->gamemode = GM_INGAME;
     global->ingame.crouching = 0;
     global->ingame.inventory[0] = revolver();
+    global->ingame.prev_health = 67;
+    global->ingame.damage_taken = 0;
+    global->ingame.hit_time = 0;
+    global->ingame.kill_time = 0;
 
     if (FileExists("chat.wav")) {
-        InitAudioDevice();
         global->ingame.chat_sound = LoadSound("chat.wav");
         global->ingame.chat_sound_loaded =
             global->ingame.chat_sound.stream.buffer != NULL;
@@ -327,7 +335,6 @@ static void shoot_weapon(IngameState *state, Weapon *weapon) {
     if (state->updatePkt.shot_count >= 16 || weapon->ammo <= 0)
         return;
 
-    printf("shot %d\n", weapon->ammo);
     weapon->ammo--;
     float camera_height =
         state->crouching ? CROUCH_CAMERA_HEIGHT : NORMAL_CAMERA_HEIGHT;
@@ -343,6 +350,50 @@ static void shoot_weapon(IngameState *state, Weapon *weapon) {
         .end = end,
         .damage = 34,
     };
+
+    // Local hit detection for hitmarker/kill flash
+    pthread_mutex_lock(&state->entity_mutex);
+    for (int i = 0; i < state->entity_count; i++) {
+        NetEntity *e = &state->entities[i];
+        if (!e->active || e->type != ENT_PLAYER)
+            continue;
+
+        Vector3 box_min = {e->position.x - 0.3f, e->position.y, e->position.z - 0.3f};
+        Vector3 box_max = {e->position.x + 0.3f, e->position.y + 1.8f, e->position.z + 0.3f};
+
+        Vector3 ray_dir = Vector3Subtract(end, start);
+        float ray_len = Vector3Length(ray_dir);
+        if (ray_len < 0.001f) break;
+        ray_dir = Vector3Normalize(ray_dir);
+
+        float tmin = -INFINITY, tmax = INFINITY;
+        int hit = 1;
+        for (int axis = 0; axis < 3; axis++) {
+            float origin = ((float *)&start)[axis];
+            float dir = ((float *)&ray_dir)[axis];
+            float min = ((float *)&box_min)[axis];
+            float max = ((float *)&box_max)[axis];
+
+            if (fabsf(dir) < 0.0001f) {
+                if (origin < min || origin > max) { hit = 0; break; }
+            } else {
+                float t1 = (min - origin) / dir;
+                float t2 = (max - origin) / dir;
+                if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
+                if (t1 > tmin) tmin = t1;
+                if (t2 < tmax) tmax = t2;
+                if (tmin > tmax) { hit = 0; break; }
+            }
+        }
+
+        if (hit && tmin >= 0.0f && tmin <= ray_len) {
+            state->hit_time = GetTime();
+            if (e->player.health <= 34)
+                state->kill_time = GetTime();
+            break;
+        }
+    }
+    pthread_mutex_unlock(&state->entity_mutex);
 }
 
 static Vector3 handle_input(IngameState *state, Vector3 forward, Vector3 right,
@@ -562,7 +613,7 @@ static void render_frame(Global *global, IngameState *state, float ry, float rp,
 
     BeginMode3D(camera);
     if (state->map)
-        draw_map(state->map, &global->assets);
+        draw_map(state->map, global->assets);
     pthread_mutex_lock(&state->entity_mutex);
     NetEntity snapshot[MAX_ENTITIES];
     int count = state->entity_count;
@@ -572,7 +623,7 @@ static void render_frame(Global *global, IngameState *state, float ry, float rp,
     for (int i = 0; i < count; i++) {
         if (!snapshot[i].active || snapshot[i].type != ENT_PLAYER)
             continue;
-        render_net_entity(&camera, &global->assets, snapshot[i], global);
+        render_net_entity(&camera, global->assets, snapshot[i], global);
     }
     draw_shots(state->shots, state->shot_count);
 
@@ -592,8 +643,8 @@ static void render_frame(Global *global, IngameState *state, float ry, float rp,
         DrawRectangle(0, 0, sw, sh, (Color){255, 0, 0, (unsigned char)(80 * death_t)});
         const char *died = "YOU DIED";
         int died_font = 60;
-        Vector2 died_size = MeasureTextEx(global->assets.default_font, died, died_font, 0);
-        DrawTextEx(global->assets.default_font, died,
+        Vector2 died_size = MeasureTextEx(global->assets->default_font, died, died_font, 0);
+        DrawTextEx(global->assets->default_font, died,
                    (Vector2){(sw - died_size.x) / 2.0f, (sh - died_size.y) / 2.0f - 40},
                    died_font, 0, RED);
     }
@@ -614,8 +665,23 @@ static void render_frame(Global *global, IngameState *state, float ry, float rp,
                (Vector2){(float)cross_cx, (float)(cross_cy + cross_size)}, 3.f,
                WHITE);
 
+    float hit_elapsed = GetTime() - state->hit_time;
+    if (hit_elapsed < 0.15f) {
+        float alpha = 1.0f - hit_elapsed / 0.15f;
+        Color c = {0, 255, 0, (unsigned char)(255 * alpha)};
+        int hm = 8;
+        DrawLineEx((Vector2){(float)(cross_cx - hm), (float)(cross_cy - hm)},
+                   (Vector2){(float)(cross_cx - hm / 2), (float)(cross_cy - hm / 2)}, 2.f, c);
+        DrawLineEx((Vector2){(float)(cross_cx + hm), (float)(cross_cy - hm)},
+                   (Vector2){(float)(cross_cx + hm / 2), (float)(cross_cy - hm / 2)}, 2.f, c);
+        DrawLineEx((Vector2){(float)(cross_cx - hm), (float)(cross_cy + hm)},
+                   (Vector2){(float)(cross_cx - hm / 2), (float)(cross_cy + hm / 2)}, 2.f, c);
+        DrawLineEx((Vector2){(float)(cross_cx + hm), (float)(cross_cy + hm)},
+                   (Vector2){(float)(cross_cx + hm / 2), (float)(cross_cy + hm / 2)}, 2.f, c);
+    }
+
     Weapon *cur_weapon = &state->inventory[state->inventory_idx];
-    Texture2D tex = get_texture(&global->assets, cur_weapon->heldtexture);
+    Texture2D tex = get_texture(global->assets, cur_weapon->heldtexture);
     int tex_w = tex.width, tex_h = tex.height;
     Rectangle desired = (Rectangle){sw / 4 * 2, sh - tex_h, tex_w, tex_h};
     DrawTexturePro(tex, (Rectangle){0, 0, tex_w, tex_h}, desired,
@@ -624,7 +690,7 @@ static void render_frame(Global *global, IngameState *state, float ry, float rp,
     for (int i = 0; i < count; i++) {
         if (!snapshot[i].active || snapshot[i].type != ENT_PLAYER)
             continue;
-        draw_username_billboard(camera, global->assets.default_font,
+        draw_username_billboard(camera, global->assets->default_font,
                                 snapshot[i].position,
                                 snapshot[i].player.username);
     }
@@ -669,7 +735,7 @@ static void render_frame(Global *global, IngameState *state, float ry, float rp,
             int len = end ? (int)(end - cl[i]) : (int)strlen(cl[i]);
             snprintf(line, sizeof(line), "%.*s", len, cl[i]);
             DrawTextEx(
-                global->assets.default_font, line,
+                global->assets->default_font, line,
                 (Vector2){boxX + padX, boxY + padY + (fc - 1 - i) * lineH}, 20,
                 0, WHITE);
         }
@@ -681,7 +747,7 @@ static void render_frame(Global *global, IngameState *state, float ry, float rp,
 
         char preview[32];
         snprintf(preview, sizeof(preview), "gael: %s", state->message);
-        DrawTextEx(global->assets.default_font, preview,
+        DrawTextEx(global->assets->default_font, preview,
                    (Vector2){boxX + padX, inputY + padY}, fontSize, 0, WHITE);
         break;
     }
@@ -692,7 +758,7 @@ static void render_frame(Global *global, IngameState *state, float ry, float rp,
             int len =
                 end ? (int)(end - chat_lines[i]) : (int)strlen(chat_lines[i]);
             snprintf(line, sizeof(line), "%.*s", len, chat_lines[i]);
-            DrawTextEx(global->assets.default_font, line,
+            DrawTextEx(global->assets->default_font, line,
                        (Vector2){20, sh - 120 + (found - 1 - i) * 26}, 15, 0,
                        (Color){255, 255, 255, 255});
         }
@@ -701,7 +767,7 @@ static void render_frame(Global *global, IngameState *state, float ry, float rp,
     case IS_MENU: {
         int offset = 0;
         DrawRectangle(0, 0, sw, sh, (Color){0, 0, 0, 200});
-        DrawTextEx(global->assets.default_font, "IronSRC", Vector2Zero(), 50, 0,
+        DrawTextEx(global->assets->default_font, "IronSRC", Vector2Zero(), 50, 0,
                    (Color){255, 255, 255, 255});
         offset += 50;
         Rectangle rect = (Rectangle){0, offset, 30., 20.};
@@ -712,6 +778,12 @@ static void render_frame(Global *global, IngameState *state, float ry, float rp,
         break;
     }
     }
+    float kill_elapsed = GetTime() - state->kill_time;
+    if (kill_elapsed < 0.5f) {
+        float alpha = 200.0f * (1.0f - kill_elapsed / 0.5f);
+        DrawRectangle(0, 0, sw, sh, (Color){255, 255, 255, (unsigned char)alpha});
+    }
+
     EndDrawing();
 }
 
@@ -749,6 +821,14 @@ void game_loop(Global *global) {
     }
 
     render_frame(global, state, ry, rp, camera_height);
+
+    if (state->damage_taken) {
+        state->damage_taken = 0;
+        const char *snd = GetRandomValue(0, 1) ? "headshot1" : "headshot2";
+        Sound s = get_sound(global->assets, snd);
+        if (s.stream.buffer)
+            PlaySound(s);
+    }
 
     if (state->myself.player.health > 0)
         send_player_update(state, jump_requested);

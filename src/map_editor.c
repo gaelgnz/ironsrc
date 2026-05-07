@@ -254,7 +254,7 @@ void map_editor_loop(Global *global) {
     for (int i = 0; i < s->map.sector_count; i++) {
         Sector *sector = &s->map.sectors[i];
         unsigned char t = (i == s->selected) ? 255 : 100;
-        Texture2D tex = get_texture(&global->assets, sector->texture);
+        Texture2D tex = get_texture(global->assets, sector->texture);
         DrawTexturePro(
             tex, (Rectangle){0, 0, tex.width, tex.height},
             (Rectangle){sector->x, sector->y, sector->width, sector->height},

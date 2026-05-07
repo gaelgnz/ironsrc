@@ -23,7 +23,7 @@ typedef enum GameMode {
 
 typedef struct Global {
     GameMode gamemode;
-    Assets assets;
+    Assets *assets;
     union {
         IngameState ingame;
         MenuState menu;

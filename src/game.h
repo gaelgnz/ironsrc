@@ -56,6 +56,10 @@ typedef struct IngameState {
     uint16_t shot_count;
 
     double death_start;
+    int prev_health;
+    int damage_taken;
+    double hit_time;
+    double kill_time;
 } IngameState;
 
 typedef struct Global Global;

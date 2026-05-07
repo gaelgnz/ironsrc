@@ -30,9 +30,6 @@ int main(void) {
 
     menu_init(&global);
     global.assets = assets_load();
-
-    global.assets.default_font = LoadFont(
-        "assets/fonts/font.ttf"); // dosent like being called in assets_load
     while (!WindowShouldClose()) {
 
         switch (global.gamemode) {
