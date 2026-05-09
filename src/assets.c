@@ -12,8 +12,6 @@ Licensed under the GNU GPL v3. See LICENSE for details.
 Assets *assets_load() {
     Assets *assets = calloc(1, sizeof(Assets));
 
-    InitAudioDevice();
-
     const char *tex_dir = "assets/textures";
     if (DirectoryExists(tex_dir)) {
         FilePathList files = LoadDirectoryFiles(tex_dir);

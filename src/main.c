@@ -27,8 +27,8 @@ int main(void) {
 
     SetExitKey(-1);
 
-    Global *global = calloc(1, sizeof(Global));
-
+    Global *global = malloc(sizeof(Global));
+    InitAudioDevice();
     global->assets = assets_load();
     menu_init(global);
     while (!WindowShouldClose()) {

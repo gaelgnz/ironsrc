@@ -62,6 +62,9 @@ void map_editor_init(Global *global) {
     strncpy(s->map_file_buf, "map.dat", sizeof(char[64]));
     s->map_file_edit_mode = false;
     printf("editor\n");
+    for (int i = 0; i < global->assets->count; i++) {
+        printf("%s\n", global->assets->textures[i].name);
+    }
 }
 
 void map_editor_loop(Global *global) {
