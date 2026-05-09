@@ -50,7 +50,7 @@ void map_editor_init(Global *global) {
         .offset = (Vector2){GetScreenWidth() / 2.0f, GetScreenHeight() / 2.0f},
         .target = (Vector2){0, 0},
         .rotation = 0,
-        .zoom = 4.0f};
+        .zoom = 7.0f};
     s->selected = -1;
     s->dragging = false;
     s->resizing = false;
@@ -58,9 +58,10 @@ void map_editor_init(Global *global) {
     s->texture_edit_mode = false;
     s->floor_edit_mode = false;
     s->ceiling_edit_mode = false;
-    memset(s->map_file_buf, 0, sizeof(s->map_file_buf));
-    strncpy(s->map_file_buf, "map.dat", sizeof(s->map_file_buf));
+    strncpy(s->map_file_buf, '\0', sizeof(char[64]));
+    strncpy(s->map_file_buf, "map.dat", sizeof(char[64]));
     s->map_file_edit_mode = false;
+    printf("editor\n");
 }
 
 void map_editor_loop(Global *global) {

@@ -21,9 +21,11 @@ Assets *assets_load() {
             if (IsFileExtension(files.paths[i], ".png")) {
                 Texture2D tex = LoadTexture(files.paths[i]);
                 const char *fileName = GetFileNameWithoutExt(files.paths[i]);
-                strncpy(assets->textures[assets->count].name, fileName, NAME_MAX);
+                strncpy(assets->textures[assets->count].name, fileName,
+                        NAME_MAX);
                 assets->textures[assets->count].texture = tex;
-                printf("Loaded texture [%s] from %s\n", fileName, files.paths[i]);
+                printf("Loaded texture [%s] from %s\n", fileName,
+                       files.paths[i]);
                 assets->count++;
             }
         }
@@ -35,11 +37,13 @@ Assets *assets_load() {
     const char *snd_dir = "assets/sounds";
     if (DirectoryExists(snd_dir)) {
         FilePathList files = LoadDirectoryFiles(snd_dir);
-        for (int i = 0; i < files.count && assets->sound_count < SOUNDS_MAX; i++) {
+        for (int i = 0; i < files.count && assets->sound_count < SOUNDS_MAX;
+             i++) {
             if (IsFileExtension(files.paths[i], ".wav")) {
                 Sound snd = LoadSound(files.paths[i]);
                 const char *fileName = GetFileNameWithoutExt(files.paths[i]);
-                strncpy(assets->sounds[assets->sound_count].name, fileName, NAME_MAX);
+                strncpy(assets->sounds[assets->sound_count].name, fileName,
+                        NAME_MAX);
                 assets->sounds[assets->sound_count].sound = snd;
                 printf("Loaded sound [%s] from %s\n", fileName, files.paths[i]);
                 assets->sound_count++;
@@ -53,6 +57,9 @@ Assets *assets_load() {
     if (FileExists("assets/fonts/font.ttf"))
         assets->default_font = LoadFont("assets/fonts/font.ttf");
 
+    for (int i = 0; i < assets->count; i++) {
+        printf("%d. %s\n", i, assets->textures[i].name);
+    }
     return assets;
 }
 

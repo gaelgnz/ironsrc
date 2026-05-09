@@ -15,6 +15,7 @@ Licensed under the GNU GPL v3. See LICENSE for details.
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include <sys/socket.h>
@@ -26,21 +27,21 @@ int main(void) {
 
     SetExitKey(-1);
 
-    Global global = {0};
+    Global *global = calloc(1, sizeof(Global));
 
-    menu_init(&global);
-    global.assets = assets_load();
+    global->assets = assets_load();
+    menu_init(global);
     while (!WindowShouldClose()) {
 
-        switch (global.gamemode) {
+        switch (global->gamemode) {
         case GM_MENU:
-            menu_loop(&global);
+            menu_loop(global);
             break;
         case GM_INGAME:
-            game_loop(&global);
+            game_loop(global);
             break;
         case GM_MAPEDITOR:
-            map_editor_loop(&global);
+            map_editor_loop(global);
             break;
         }
     }
