@@ -90,7 +90,9 @@ void *client_recv_thread(void *arg) {
     return NULL;
 }
 
-void connect_sv(Global *global) {
+void connect_sv(Global *global, const char *map_name) {
+    if (!map_name || !map_name[0])
+        map_name = "map.dat";
     int sockfd;
     struct sockaddr_in sv_addr;
 
@@ -157,7 +159,7 @@ void connect_sv(Global *global) {
         if (n != sizeof(map_size)) {
             printf("[TCP] Failed to read map size, got %d bytes\n", n);
             close(tcp_fd);
-            global->ingame.map = load_map("map.dat");
+            global->ingame.map = load_map(map_name);
         } else {
             printf("[TCP] Received map size: %d\n", map_size);
             global->ingame.map = malloc(map_size);
@@ -186,13 +188,13 @@ void connect_sv(Global *global) {
                 printf("[TCP] Map receive incomplete, got %d/%d bytes\n",
                        total_read, map_size);
                 free(global->ingame.map);
-                global->ingame.map = load_map("map.dat");
+                global->ingame.map = load_map(map_name);
             }
         }
     } else {
         printf("[TCP] TCP connect failed, falling back to local file\n");
         // Fallback to local file
-        global->ingame.map = load_map("map.dat");
+        global->ingame.map = load_map(map_name);
     }
 
     // Find PLAYER_START and set initial position
@@ -242,16 +244,18 @@ void connect_sv(Global *global) {
     pthread_detach(tid);
 }
 
-void host() {
+void host(const char *map_name) {
+    if (!map_name || !map_name[0])
+        map_name = "map.dat";
     pid_t pid = fork();
     if (pid == 0) {
         prctl(PR_SET_PDEATHSIG, SIGTERM);
         freopen("/dev/null", "w", stdout);
         freopen("/dev/null", "w", stderr);
-        execl("./server", "server", (char *)NULL);
+        execl("./server", "server", map_name, (char *)NULL);
         char path[256];
         snprintf(path, sizeof(path), "%s/server", getenv("HOME"));
-        execl(path, "server", (char *)NULL);
+        execl(path, "server", map_name, (char *)NULL);
         _exit(1);
     }
     // Wait for server to start

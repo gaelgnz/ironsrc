@@ -110,8 +110,8 @@ void menu_loop(Global *global) {
             int action_y = panel_y + panel_h - 48;
             if (GuiButton((Rectangle){field_x, action_y, 120, 32},
                           "Start Host")) {
-                host();
-                connect_sv(global);
+                host(state->map);
+                connect_sv(global, state->map);
             }
             if (GuiButton(
                     (Rectangle){panel_x + panel_w - 100, action_y, 80, 32},
@@ -146,7 +146,7 @@ void menu_loop(Global *global) {
 
             int action_y = panel_y + panel_h - 48;
             if (GuiButton((Rectangle){field_x, action_y, 120, 32}, "Connect")) {
-                connect_sv(global);
+                connect_sv(global, state->map);
             }
             if (GuiButton(
                     (Rectangle){panel_x + panel_w - 100, action_y, 80, 32},

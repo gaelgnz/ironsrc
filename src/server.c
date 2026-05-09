@@ -519,7 +519,8 @@ void *tcp_map_thread(void *arg) {
 }
 
 
-int main() {
+int main(int argc, char *argv[]) {
+    (void)argc;
     int listenfd;
     struct sockaddr_in addr;
 
@@ -540,7 +541,8 @@ int main() {
     sv_init(sv);
 
     // Load map
-    FILE *map_file = fopen("map.dat", "rb");
+    const char *map_name = argv[1] ? argv[1] : "map.dat";
+    FILE *map_file = fopen(map_name, "rb");
     if (map_file) {
         fread(&sv->map, sizeof(Map), 1, map_file);
         fclose(map_file);

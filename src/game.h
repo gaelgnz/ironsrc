@@ -64,6 +64,6 @@ typedef struct IngameState {
 
 typedef struct Global Global;
 void game_loop(Global *global);
-void connect_sv(Global *global);
-void host();
+void connect_sv(Global *global, const char *map_name);
+void host(const char *map_name);
 #endif
