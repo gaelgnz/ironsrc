@@ -10,8 +10,8 @@ Licensed under the GNU GPL v3. See LICENSE for details.
 #include "raylib.h"
 #include <stdio.h>
 #include <string.h>
-void menu_init(Global *global) {
 
+void menu_init(Global *global) {
     global->gamemode = GM_MENU;
     strcpy(global->menu.ip, "127.0.0.1");
     sprintf(global->menu.port, "%d", 4445);
@@ -20,83 +20,142 @@ void menu_init(Global *global) {
 void menu_loop(Global *global) {
     MenuState *state = &global->menu;
 
+    int sw = GetScreenWidth();
+    int sh = GetScreenHeight();
+
     BeginDrawing();
-    ClearBackground(GRAY);
-    // GuiSetFont(global->assets.default_font);
-    if (GuiButton((Rectangle){24, GetScreenHeight() - 60, 120, 30}, "Host")) {
+    ClearBackground(DARKGRAY);
+
+    const char *title = "IRONSRC";
+    int title_size = 40;
+    DrawText(title, (sw - MeasureText(title, title_size)) / 2, 40, title_size,
+             RAYWHITE);
+
+    int btn_y = sh - 60;
+    int btn_w = 120, btn_h = 34;
+    int btn_spacing = 16;
+    int total_w = btn_w * 3 + btn_spacing * 2;
+    int btn_start_x = (sw - total_w) / 2;
+
+    if (GuiButton((Rectangle){btn_start_x, btn_y, btn_w, btn_h}, "Host")) {
         state->host_menu = true;
+        state->connect_menu = false;
+    }
+    if (GuiButton(
+            (Rectangle){btn_start_x + btn_w + btn_spacing, btn_y, btn_w, btn_h},
+            "Connect")) {
+        state->connect_menu = true;
+        state->host_menu = false;
+    }
+    if (GuiButton((Rectangle){btn_start_x + (btn_w + btn_spacing) * 2, btn_y,
+                              btn_w, btn_h},
+                  "Map Editor")) {
+        memset(&global->editor, 0, sizeof(MapEditorState));
+        map_editor_init(global);
+        global->gamemode = GM_MAPEDITOR;
     }
 
-    if (state->host_menu) {
-        Rectangle host_win = {50, 50, 300, 300};
-        GuiWindowBox(host_win, "Host");
+    if (state->host_menu || state->connect_menu) {
+        int panel_w = 320;
+        int panel_h = 220;
+        int panel_x = (sw - panel_w) / 2;
+        int panel_y = (sh - panel_h) / 2;
 
-        if (GuiButton((Rectangle){host_win.x + 20, host_win.y + 40, 120, 30},
-                      "Start Host")) {
-            host();
-            connect_sv(global);
+        DrawRectangle(panel_x, panel_y, panel_w, panel_h, Fade(BLACK, 0.55f));
+        DrawRectangleLinesEx((Rectangle){panel_x, panel_y, panel_w, panel_h}, 2,
+                             LIGHTGRAY);
+
+        int tab_w = panel_w / 2;
+        int tab_h = 32;
+        bool host_tab = state->host_menu;
+        bool connect_tab = state->connect_menu;
+        if (GuiButton((Rectangle){panel_x, panel_y, tab_w, tab_h}, "Host")) {
+            state->host_menu = true;
+            state->connect_menu = false;
+            state->map_edit_mode = false;
+            state->ip_edit_mode = false;
+            state->port_edit_mode = false;
         }
 
-        if (GuiButton((Rectangle){host_win.x + 20, host_win.y + 80, 120, 30},
-                      "Close")) {
+        if (GuiButton((Rectangle){panel_x + tab_w, panel_y, tab_w, tab_h},
+                      "Connect")) {
+            state->connect_menu = true;
             state->host_menu = false;
+            state->map_edit_mode = false;
+            state->ip_edit_mode = false;
+            state->port_edit_mode = false;
         }
-    }
 
-    if (state->connect_menu) {
-        Rectangle connect_win = {380, 50, 300, 300};
-        GuiWindowBox(connect_win, "Connect");
+        int ul_x = host_tab ? panel_x : panel_x + tab_w;
+        DrawRectangle(ul_x, panel_y + tab_h - 2, tab_w, 2, SKYBLUE);
 
-        Rectangle ip_box = {connect_win.x + 20, connect_win.y + 40, 200, 30};
-        Rectangle port_box = {connect_win.x + 20, connect_win.y + 90, 200, 30};
+        int content_y = panel_y + tab_h + 16;
+        int field_x = panel_x + 20;
+        int field_w = panel_w - 40;
+        int label_h = 18;
+        int field_h = 28;
 
-        GuiLabel((Rectangle){ip_box.x, ip_box.y - 20, 100, 20}, "IP:");
-        GuiLabel((Rectangle){port_box.x, port_box.y - 20, 100, 20}, "Port:");
+        if (host_tab) {
+            Rectangle map_box = {field_x, content_y + label_h, field_w,
+                                 field_h};
 
-        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-            bool clicked_ip =
-                CheckCollisionPointRec(GetMousePosition(), ip_box);
-            bool clicked_port =
-                CheckCollisionPointRec(GetMousePosition(), port_box);
-            if (clicked_ip) {
-                state->ip_edit_mode = true;
-                state->port_edit_mode = false;
-            } else if (clicked_port) {
-                state->port_edit_mode = true;
-                state->ip_edit_mode = false;
-            } else {
+            GuiLabel((Rectangle){field_x, content_y, 80, label_h}, "Map name:");
+            GuiTextBox(map_box, state->map, 32, state->map_edit_mode);
+
+            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+                state->map_edit_mode =
+                    CheckCollisionPointRec(GetMousePosition(), map_box);
+            }
+
+            int action_y = panel_y + panel_h - 48;
+            if (GuiButton((Rectangle){field_x, action_y, 120, 32},
+                          "Start Host")) {
+                host();
+                connect_sv(global);
+            }
+            if (GuiButton(
+                    (Rectangle){panel_x + panel_w - 100, action_y, 80, 32},
+                    "Close")) {
+                state->host_menu = false;
+                state->map_edit_mode = false;
+            }
+        }
+
+        if (connect_tab) {
+            Rectangle ip_box = {field_x, content_y + label_h, field_w, field_h};
+            Rectangle port_box = {field_x,
+                                  content_y + label_h * 2 + field_h + 10,
+                                  field_w, field_h};
+
+            GuiLabel((Rectangle){field_x, content_y, 80, label_h},
+                     "IP address:");
+            GuiLabel((Rectangle){field_x, content_y + label_h + field_h + 10,
+                                 80, label_h},
+                     "Port:");
+
+            GuiTextBox(ip_box, state->ip, 64, state->ip_edit_mode);
+            GuiTextBox(port_box, state->port, 16, state->port_edit_mode);
+
+            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+                Vector2 mouse = GetMousePosition();
+                bool on_ip = CheckCollisionPointRec(mouse, ip_box);
+                bool on_port = CheckCollisionPointRec(mouse, port_box);
+                state->ip_edit_mode = on_ip;
+                state->port_edit_mode = on_port;
+            }
+
+            int action_y = panel_y + panel_h - 48;
+            if (GuiButton((Rectangle){field_x, action_y, 120, 32}, "Connect")) {
+                connect_sv(global);
+            }
+            if (GuiButton(
+                    (Rectangle){panel_x + panel_w - 100, action_y, 80, 32},
+                    "Close")) {
+                state->connect_menu = false;
                 state->ip_edit_mode = false;
                 state->port_edit_mode = false;
             }
         }
-
-        GuiTextBox(ip_box, state->ip, 64, state->ip_edit_mode);
-        GuiTextBox(port_box, state->port, 16, state->port_edit_mode);
-
-        if (GuiButton(
-                (Rectangle){connect_win.x + 20, connect_win.y + 140, 120, 30},
-                "Connect")) {
-            connect_sv(global);
-        }
-
-        if (GuiButton(
-                (Rectangle){connect_win.x + 160, connect_win.y + 140, 120, 30},
-                "Close")) {
-            state->connect_menu = false;
-        }
-    }
-
-    if (GuiButton((Rectangle){160, GetScreenHeight() - 60, 120, 30},
-                  "Connect")) {
-        state->connect_menu = true;
-    }
-
-    if (GuiButton((Rectangle){296, GetScreenHeight() - 60, 120, 30},
-                  "Map Editor")) {
-        // Initialize map editor state
-        memset(&global->editor, 0, sizeof(MapEditorState));
-        map_editor_init(global);
-        global->gamemode = GM_MAPEDITOR;
     }
 
     EndDrawing();

@@ -8,11 +8,14 @@ Licensed under the GNU GPL v3. See LICENSE for details.
 #include "stdbool.h"
 typedef struct MenuState {
     bool host_menu;
+    char map[32];
+
     bool connect_menu;
 
     char ip[64];
     char port[16];
 
+    bool map_edit_mode;
     bool ip_edit_mode;
     bool port_edit_mode;
 } MenuState;
