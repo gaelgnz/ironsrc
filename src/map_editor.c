@@ -18,6 +18,7 @@ Licensed under the GNU GPL v3. See LICENSE for details.
 #define GRID_SIZE 1
 #define HANDLE_SIZE 1
 #define MIN_SECTOR_SIZE 1
+#define ENTITY_SELECT_RADIUS 1.0f
 
 inline Vector2 snap_to_grid(Vector2 v) {
     return (Vector2){(int)(v.x / GRID_SIZE) * GRID_SIZE,
@@ -37,6 +38,47 @@ static bool is_mouse_in_resize_handle(Camera2D camera, Sector *sector) {
     return mouse.x >= hx - HANDLE_SIZE && mouse.x <= hx + HANDLE_SIZE &&
            mouse.y >= hy - HANDLE_SIZE && mouse.y <= hy + HANDLE_SIZE;
 }
+
+static int get_entity_at(Map *map, Camera2D camera, float radius) {
+    Vector2 mouse = GetScreenToWorld2D(GetMousePosition(), camera);
+    for (int i = map->entity_count - 1; i >= 0; i--) {
+        Entity *e = &map->entities[i];
+        if (!e->active) continue;
+        float dx = e->position.x - mouse.x;
+        float dz = e->position.z - mouse.y;
+        if (dx*dx + dz*dz <= radius*radius)
+            return i;
+    }
+    return -1;
+}
+
+static void place_entity(MapEditorState *s, EntityType type, Camera2D camera) {
+    if (s->map.entity_count >= MAX_ENTITIES) return;
+
+    Vector2 pos = GetScreenToWorld2D(GetMousePosition(), camera);
+    float floor_y = 0;
+    for (int i = 0; i < s->map.sector_count; i++) {
+        Sector *sec = &s->map.sectors[i];
+        Vector2 mouse = GetScreenToWorld2D(GetMousePosition(), camera);
+        if (mouse.x >= sec->x && mouse.x <= sec->x + sec->width &&
+            mouse.y >= sec->y && mouse.y <= sec->y + sec->height) {
+            floor_y = (float)sec->floor_height;
+            break;
+        }
+    }
+
+    Entity e = {0};
+    e.active = true;
+    e.type = type;
+    e.position = (Vector3){pos.x, type == ENT_PLAYER_START ? floor_y + 1 : floor_y, pos.y};
+    if (type == ENT_NPC_GENERIC) {
+        e.npc.health = 100;
+        strncpy(e.npc.texture, "enemy", 32);
+    }
+
+    s->map.entities[s->map.entity_count++] = e;
+}
+
 void save_map(Map *map, const char *path) {
     FILE *f = fopen(path, "wb");
     if (!f)
@@ -52,12 +94,14 @@ void map_editor_init(Global *global) {
         .rotation = 0,
         .zoom = 7.0f};
     s->selected = -1;
+    s->selected_entity = -1;
     s->dragging = false;
     s->resizing = false;
     s->creating = false;
     s->texture_edit_mode = false;
     s->floor_edit_mode = false;
     s->ceiling_edit_mode = false;
+    s->npc_tex_edit_mode = false;
     strncpy(s->map_file_buf, '\0', sizeof(char[64]));
     strncpy(s->map_file_buf, "map.dat", sizeof(char[64]));
     s->map_file_edit_mode = false;
@@ -76,6 +120,9 @@ void map_editor_loop(Global *global) {
     int panel_width = GetScreenWidth() / 3;
     bool mouse_in_panel =
         s->menu_open && mouse.x > GetScreenWidth() - panel_width;
+
+    if (IsKeyPressed(KEY_F1))
+        s->menu_open = !s->menu_open;
 
     // Camera keyboard
     if (IsKeyDown(KEY_W))
@@ -102,61 +149,73 @@ void map_editor_loop(Global *global) {
             s->camera.zoom = 0.1f;
     }
 
-    if (IsKeyPressed(KEY_F1))
-        s->menu_open = !s->menu_open;
-
-    // Delete selected sector
+    // Entity placement / deletion
     if (IsKeyPressed(KEY_X)) {
-
-        for (int i = 0; i < s->map.entity_count; i++) {
-            if (s->map.entities[i].type == ENT_PLAYER_START) {
-                // Shift everything left
-                for (int j = i; j < s->map.entity_count - 1; j++) {
-                    s->map.entities[j] = s->map.entities[j + 1];
+        if (s->selected_entity >= 0) {
+            // Delete selected entity
+            int idx = s->selected_entity;
+            for (int j = idx; j < s->map.entity_count - 1; j++)
+                s->map.entities[j] = s->map.entities[j + 1];
+            s->map.entity_count--;
+            s->selected_entity = -1;
+        } else {
+            // Delete all PLAYER_START, then place new one
+            for (int i = 0; i < s->map.entity_count; i++) {
+                if (s->map.entities[i].active && s->map.entities[i].type == ENT_PLAYER_START) {
+                    for (int j = i; j < s->map.entity_count - 1; j++)
+                        s->map.entities[j] = s->map.entities[j + 1];
+                    s->map.entity_count--;
+                    i--;
                 }
-                s->map.entity_count--;
-                i--;
             }
+            place_entity(s, ENT_PLAYER_START, s->camera);
         }
+    }
 
-        // Add new one
-        Entity e = (Entity){0};
-        e.active = true;
-        e.type = ENT_PLAYER_START;
+    if (IsKeyPressed(KEY_Z) && !IsKeyDown(KEY_LEFT_CONTROL) && !IsKeyDown(KEY_RIGHT_CONTROL)) {
+        place_entity(s, ENT_NPC_GENERIC, s->camera);
+    }
 
-        Vector2 pos = GetScreenToWorld2D(GetMousePosition(), s->camera);
-        float floor_y = 0;
-        for (int i = 0; i < s->map.sector_count; i++) {
-            if (is_mouse_in_sector(s->camera, &s->map.sectors[i])) {
-                floor_y = s->map.sectors[i].floor_height + 1;
-                break;
-            }
-        }
-        e.position = (Vector3){pos.x, floor_y, pos.y};
+    // Delete entity with Delete/Backspace
+    if ((IsKeyPressed(KEY_DELETE) || IsKeyPressed(KEY_BACKSPACE)) && s->selected_entity >= 0) {
+        int idx = s->selected_entity;
+        for (int j = idx; j < s->map.entity_count - 1; j++)
+            s->map.entities[j] = s->map.entities[j + 1];
+        s->map.entity_count--;
+        s->selected_entity = -1;
+    }
 
-        s->map.entities[s->map.entity_count++] = e;
+    if (IsKeyPressed(KEY_ESCAPE)) {
+        global->gamemode = GM_MENU;
+        memset(&global->editor, 0, sizeof(MapEditorState));
     }
 
     if (!mouse_in_panel) {
+        // Entity selection (check before sector selection)
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !s->creating) {
+            int ei = get_entity_at(&s->map, s->camera, ENTITY_SELECT_RADIUS);
+            if (ei >= 0) {
+                s->selected_entity = ei;
+                s->selected = -1;
+                s->dragging = false;
+                s->resizing = false;
+                // Initialize edit buffers
+                Entity *e = &s->map.entities[ei];
+                snprintf(s->npc_tex_buf, sizeof(s->npc_tex_buf), "%s", e->npc.texture);
+                snprintf(s->npc_health_buf, sizeof(s->npc_health_buf), "%d", e->npc.health);
+                snprintf(s->pos_x_buf, sizeof(s->pos_x_buf), "%.1f", e->position.x);
+                snprintf(s->pos_z_buf, sizeof(s->pos_z_buf), "%.1f", e->position.z);
+                goto done_left_click;
+            }
+        }
+
         // Start creating sector with right click drag
         if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
             Vector2 snapped = snap_to_grid(world_mouse);
             s->create_start = snapped;
             s->creating = true;
             s->selected = -1;
-        }
-
-        if (IsKeyPressed(KEY_X)) {
-            Entity e = (Entity){0};
-            e.active = true;
-            e.type = ENT_PLAYER_START;
-            Vector2 pos = GetScreenToWorld2D(GetMousePosition(), s->camera);
-            e.position = (Vector3){pos.x, 0, pos.y};
-            s->map.entities[s->map.entity_count++] = e;
-        }
-        if (IsKeyPressed(KEY_ESCAPE)) {
-            global->gamemode = GM_MENU;
-            memset(&global->editor, 0, sizeof(MapEditorState));
+            s->selected_entity = -1;
         }
         if (s->creating) {
             if (IsMouseButtonReleased(MOUSE_RIGHT_BUTTON)) {
@@ -177,6 +236,7 @@ void map_editor_loop(Global *global) {
                     ns.ceiling_height = 5;
                     ns.ceiling_enabled = true;
                     s->selected = s->map.sector_count;
+                    s->selected_entity = -1;
                     s->map.sectors[s->map.sector_count++] = ns;
                 }
                 s->creating = false;
@@ -190,7 +250,7 @@ void map_editor_loop(Global *global) {
                 }
             }
 
-            // Drag
+            // Sector drag
             if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !s->resizing) {
                 s->dragging = false;
                 for (int i = s->map.sector_count - 1; i >= 0; i--) {
@@ -205,6 +265,7 @@ void map_editor_loop(Global *global) {
                                 world_mouse.y - s->map.sectors[i].y;
                         }
                         s->selected = i;
+                        s->selected_entity = -1;
                         break;
                     }
                 }
@@ -236,6 +297,7 @@ void map_editor_loop(Global *global) {
             }
         }
     }
+    done_left_click:
 
     // Draw
     BeginDrawing();
@@ -273,11 +335,31 @@ void map_editor_loop(Global *global) {
         }
     }
 
+    // Draw entities
     for (int i = 0; i < s->map.entity_count; i++) {
         Entity *e = &s->map.entities[i];
-        if (e->active && e->type == ENT_PLAYER_START) {
-            DrawCircleV((Vector2){e->position.x, e->position.z}, 0.2, GREEN);
+        if (!e->active) continue;
+        Vector2 ep = {e->position.x, e->position.z};
+        bool sel = i == s->selected_entity;
+        if (e->type == ENT_PLAYER_START) {
+            DrawCircleV(ep, sel ? 0.5f : 0.3f, sel ? YELLOW : GREEN);
+            DrawCircleLinesV(ep, 0.5f, GREEN);
+        } else if (e->type == ENT_NPC_GENERIC) {
+            Color c = sel ? YELLOW : RED;
+            DrawRectangleV((Vector2){ep.x - 0.25f, ep.y - 0.25f}, (Vector2){0.5f, 0.5f}, c);
+            DrawRectangleLinesEx((Rectangle){ep.x - 0.3f, ep.y - 0.3f, 0.6f, 0.6f}, 0.1f, RED);
+        } else if (e->type == ENT_LIGHT) {
+            DrawCircleV(ep, sel ? 0.4f : 0.25f, sel ? YELLOW : (Color){255, 255, 0, 150});
+        } else if (e->type == ENT_PROP) {
+            DrawCircleV(ep, sel ? 0.4f : 0.25f, sel ? YELLOW : GRAY);
         }
+        // Label
+        const char *label = "";
+        if (e->type == ENT_PLAYER_START) label = "Spawn";
+        else if (e->type == ENT_NPC_GENERIC) label = "NPC";
+        Vector2 ls = MeasureTextEx(global->assets->default_font, label, 5, 0);
+        DrawTextEx(global->assets->default_font, label,
+                   (Vector2){ep.x - ls.x/2, ep.y - 0.6f - ls.y}, 5, 0, WHITE);
     }
 
     // Preview new sector while creating
@@ -295,7 +377,7 @@ void map_editor_loop(Global *global) {
 
         Rectangle panel = {GetScreenWidth() - panel_width, 0, panel_width,
                            GetScreenHeight()};
-        GuiWindowBox(panel, "Edit Sector");
+        GuiWindowBox(panel, "Editor");
 
         float px = panel.x + 10;
         float py = panel.y + 30;
@@ -312,11 +394,72 @@ void map_editor_loop(Global *global) {
             if (loaded) {
                 s->map = *loaded;
                 s->selected = -1;
+                s->selected_entity = -1;
             }
         }
         py += 35;
 
-        if (s->selected >= 0 && s->selected < s->map.sector_count) {
+        // Entity editing
+        if (s->selected_entity >= 0 && s->selected_entity < s->map.entity_count) {
+            Entity *e = &s->map.entities[s->selected_entity];
+            const char *type_str = "Unknown";
+            if (e->type == ENT_PLAYER_START) type_str = "Player Start";
+            else if (e->type == ENT_NPC_GENERIC) type_str = "NPC";
+            else if (e->type == ENT_LIGHT) type_str = "Light";
+            else if (e->type == ENT_PROP) type_str = "Prop";
+
+            GuiLabel((Rectangle){px, py, fw, 20},
+                     TextFormat("Entity %d - %s", s->selected_entity, type_str));
+            py += 25;
+
+            GuiLabel((Rectangle){px, py, fw, 20}, "Position X:");
+            py += 20;
+            Rectangle px_box = {px, py, fw, 25};
+            if (GuiTextBox(px_box, s->pos_x_buf, sizeof(s->pos_x_buf), false)) {
+                e->position.x = (float)atof(s->pos_x_buf);
+            }
+            py += 35;
+
+            GuiLabel((Rectangle){px, py, fw, 20}, "Position Z:");
+            py += 20;
+            Rectangle pz_box = {px, py, fw, 25};
+            if (GuiTextBox(pz_box, s->pos_z_buf, sizeof(s->pos_z_buf), false)) {
+                e->position.z = (float)atof(s->pos_z_buf);
+            }
+            py += 35;
+
+            if (e->type == ENT_NPC_GENERIC) {
+                GuiLabel((Rectangle){px, py, fw, 20}, "Health:");
+                py += 20;
+                Rectangle hp_box = {px, py, fw, 25};
+                if (GuiTextBox(hp_box, s->npc_health_buf, sizeof(s->npc_health_buf), false)) {
+                    e->npc.health = atoi(s->npc_health_buf);
+                }
+                py += 35;
+
+                GuiLabel((Rectangle){px, py, fw, 20}, "Texture:");
+                py += 20;
+                Rectangle nt_box = {px, py, fw, 25};
+                if (GuiTextBox(nt_box, s->npc_tex_buf, sizeof(s->npc_tex_buf),
+                               s->npc_tex_edit_mode))
+                    s->npc_tex_edit_mode = !s->npc_tex_edit_mode;
+                strncpy(e->npc.texture, s->npc_tex_buf, 32);
+                py += 35;
+            }
+
+            if (GuiButton((Rectangle){px, py, fw, 25}, "Save"))
+                save_map(&s->map, s->map_file_buf);
+            py += 35;
+            if (GuiButton((Rectangle){px, py, fw, 25}, "Delete Entity")) {
+                int idx = s->selected_entity;
+                for (int j = idx; j < s->map.entity_count - 1; j++)
+                    s->map.entities[j] = s->map.entities[j + 1];
+                s->map.entity_count--;
+                s->selected_entity = -1;
+            }
+        }
+        // Sector editing
+        else if (s->selected >= 0 && s->selected < s->map.sector_count) {
             Sector *sec = &s->map.sectors[s->selected];
             if (s->selected != s->last_selected) {
                 snprintf(s->floor_buf, sizeof(s->floor_buf), "%d",
@@ -372,9 +515,13 @@ void map_editor_loop(Global *global) {
             if (GuiButton((Rectangle){px, py, fw, 25}, "Save"))
                 save_map(&s->map, s->map_file_buf);
         } else {
-            GuiLabel((Rectangle){px, py, fw, 20}, "No sector selected");
+            GuiLabel((Rectangle){px, py, fw, 20}, "No selection");
             py += 25;
-            GuiLabel((Rectangle){px, py, fw, 20}, "Right-drag to create");
+            GuiLabel((Rectangle){px, py, fw, 20}, "X: place spawn   Z: place NPC");
+            py += 20;
+            GuiLabel((Rectangle){px, py, fw, 20}, "Left-click entity: select");
+            py += 20;
+            GuiLabel((Rectangle){px, py, fw, 20}, "Right-drag: create sector");
         }
     }
     DrawFPS(0, 0);

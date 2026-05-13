@@ -7,7 +7,6 @@ Licensed under the GNU GPL v3. See LICENSE for details.
 
 #define NOT_PLAYER -1
 #define MAX_ENTITIES 256
-
 #include "raylib.h"
 
 typedef enum EntityType {
@@ -22,13 +21,19 @@ typedef struct PlayerData {
     char username[12];
     int health;
 } PlayerData;
-
+// Example, add and disable in your game
 typedef struct NpcData {
     int health;
+    char texture[32];
 } NpcData;
 
+typedef struct Enemy {
+    char texture[32];
+    int health;
+} Enemy;
+
 typedef struct PropData {
-    int model_id; // Better than storing the full Model struct here
+    int model_id;
 } PropData;
 
 typedef struct NetEntity {
@@ -57,5 +62,8 @@ typedef struct Entity {
         PropData prop;
     };
 } Entity;
+
+typedef struct Server Server;
+Vector3 entity_pathfind(Vector3 initial_pos, struct Server *server);
 
 #endif

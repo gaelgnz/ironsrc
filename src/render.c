@@ -19,6 +19,13 @@ void render_net_entity(Camera *camera, Assets *assets, NetEntity entity,
     if (entity.type == ENT_PLAYER) {
         pos.y += 0.5f;
         DrawBillboard(*camera, get_texture(assets, "player"), pos, 1.f, WHITE);
+    } else if (entity.type == ENT_NPC_GENERIC) {
+        if (entity.npc.health <= 0)
+            return;
+        pos.y += 0.5f;
+        Texture2D tex = get_texture(assets, entity.npc.texture);
+        if (tex.id == 0) tex = get_texture(assets, "player");
+        DrawBillboard(*camera, tex, pos, 1.f, WHITE);
     }
 }
 void draw_username_billboard(Camera3D camera, Font font, Vector3 world_pos,

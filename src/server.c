@@ -193,15 +193,19 @@ void sv_receive_update(Server *server, int client_id, pktUserUpdate cmd) {
 
 void sv_init(Server *server) {
     memset(server, 0, sizeof(Server));
+}
 
-    Entity npc = {0};
-    npc.client_id = NOT_PLAYER;
-    npc.position = Vector3One();
-    npc.type = ENT_NPC_GENERIC;
-    npc.active = true;
-
-    server->entities[0] = npc;
-    server->entity_count = 1;
+static void sv_instantiate_map_entities(Server *server) {
+    for (int i = 0; i < server->map.entity_count; i++) {
+        Entity *me = &server->map.entities[i];
+        if (!me->active) continue;
+        if (me->type == ENT_NPC_GENERIC || me->type == ENT_PROP || me->type == ENT_LIGHT) {
+            if (server->entity_count >= MAX_ENTITIES) break;
+            Entity *e = &server->entities[server->entity_count++];
+            *e = *me;
+            e->client_id = NOT_PLAYER;
+        }
+    }
 }
 
 static int shot_hits_entity(Shot *shot, Entity *entity) {
@@ -235,7 +239,6 @@ static int shot_hits_entity(Shot *shot, Entity *entity) {
 }
 
 void sv_tick(Server *server, float dt) {
-    // Process new shots: damage, death, kill messages
     for (uint16_t i = server->last_processed_shot; i < server->shot_count; i++) {
         Shot *shot = &server->shots[i];
         if (shot->owner_client_id < 0)
@@ -243,43 +246,63 @@ void sv_tick(Server *server, float dt) {
 
         for (int e = 0; e < server->entity_count; e++) {
             Entity *entity = &server->entities[e];
-            if (!entity->active || entity->type != ENT_PLAYER)
+            if (!entity->active || (entity->type != ENT_PLAYER && entity->type != ENT_NPC_GENERIC))
                 continue;
             if (entity->client_id == shot->owner_client_id)
                 continue;
-            if (entity->player.health <= 0)
+
+            int *health = entity->type == ENT_NPC_GENERIC
+                              ? &entity->npc.health
+                              : &entity->player.health;
+            if (*health <= 0)
                 continue;
             if (!shot_hits_entity(shot, entity))
                 continue;
 
-            entity->player.health -= shot->damage;
+            *health -= shot->damage;
 
-            if (entity->player.health <= 0) {
-                entity->player.health = 0;
+            if (*health <= 0) {
+                *health = 0;
                 entity->velocity = (Vector3){0, 0, 0};
 
-                const char *killer = server->clients[shot->owner_client_id].username;
-                const char *victim = entity->player.username;
-                const char *verbs[] = {
-                    "decimated", "turned to ashes", "obliterated",
-                    "annihilated", "demolished", "shattered",
-                };
-                const char *verb = verbs[rand() % (sizeof(verbs) / sizeof(verbs[0]))];
-                char msg[128];
-                snprintf(msg, sizeof(msg), "%s %s %s\n", killer, verb, victim);
-                strncat(server->chat, msg,
-                        sizeof(server->chat) - strlen(server->chat) - 1);
+                if (entity->type == ENT_NPC_GENERIC) {
+                    entity->active = false;
+                    const char *killer =
+                        server->clients[shot->owner_client_id].username;
+                    char msg[128];
+                    snprintf(msg, sizeof(msg), "%s eliminated an enemy\n",
+                             killer);
+                    strncat(server->chat, msg,
+                            sizeof(server->chat) - strlen(server->chat) - 1);
+                } else {
+                    const char *killer =
+                        server->clients[shot->owner_client_id].username;
+                    const char *victim = entity->player.username;
+                    const char *verbs[] = {
+                        "decimated", "turned to ashes", "obliterated",
+                        "annihilated", "demolished", "shattered", "killed"
+                    };
+                    const char *verb =
+                        verbs[rand() %
+                              (sizeof(verbs) / sizeof(verbs[0]))];
+                    char msg[128];
+                    snprintf(msg, sizeof(msg), "%s %s %s\n", killer, verb,
+                             victim);
+                    strncat(server->chat, msg,
+                            sizeof(server->chat) - strlen(server->chat) - 1);
 
-                if (entity->client_id >= 0) {
-                    server->clients[entity->client_id].dead = 1;
-                    server->clients[entity->client_id].death_time = get_time();
+                    if (entity->client_id >= 0) {
+                        server->clients[entity->client_id].dead = 1;
+                        server->clients[entity->client_id].death_time =
+                            get_time();
+                    }
                 }
             }
         }
     }
     server->last_processed_shot = server->shot_count;
 
-    // Respawn dead players after 3 seconds
+    // respawn dead players after 3 seconds
     double now = get_time();
     for (int c = 0; c < server->client_count; c++) {
         if (!server->clients[c].dead)
@@ -313,6 +336,17 @@ void sv_tick(Server *server, float dt) {
         // Dead players are frozen in place
         if (e->client_id != NOT_PLAYER && server->clients[e->client_id].dead)
             continue;
+
+        if (e->client_id == NOT_PLAYER) {
+            Vector3 target = entity_pathfind(e->position, server);
+            Vector3 dir = Vector3Subtract(target, e->position);
+            dir.y = 0;
+            if (Vector3Length(dir) > 0.5f) {
+                dir = Vector3Normalize(dir);
+                e->velocity.x = dir.x * 2.0f;
+                e->velocity.z = dir.z * 2.0f;
+            }
+        }
 
         if (e->client_id != NOT_PLAYER) {
             pktUserUpdate upd = server->last_client_updates[e->client_id];
@@ -531,7 +565,7 @@ int main(int argc, char *argv[]) {
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
     addr.sin_port = htons(PORT);
 
-    bind(listenfd, (struct sockaddr *)&addr, sizeof(addr));
+    int result = bind(listenfd, (struct sockaddr *)&addr, sizeof(addr));
 
     printf("listening on %d\n", PORT);
 
@@ -549,6 +583,7 @@ int main(int argc, char *argv[]) {
         printf("Loaded map with %d sectors, %d entities\n",
                sv->map.sector_count, sv->map.entity_count);
         fflush(stdout);
+        sv_instantiate_map_entities(sv);
     } else {
         printf("No map.dat found, using empty map\n");
         fflush(stdout);

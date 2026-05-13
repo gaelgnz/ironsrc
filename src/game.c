@@ -355,15 +355,14 @@ static void shoot_weapon(IngameState *state, Weapon *weapon) {
         .damage = 34,
     };
 
-    // Local hit detection for hitmarker/kill flash
     pthread_mutex_lock(&state->entity_mutex);
     for (int i = 0; i < state->entity_count; i++) {
         NetEntity *e = &state->entities[i];
-        if (!e->active || e->type != ENT_PLAYER)
+        if (!e->active || (e->type != ENT_PLAYER && e->type != ENT_NPC_GENERIC))
             continue;
 
         Vector3 box_min = {e->position.x - 0.3f, e->position.y, e->position.z - 0.3f};
-        Vector3 box_max = {e->position.x + 0.3f, e->position.y + 1.8f, e->position.z + 0.3f};
+        Vector3 box_max = {e->position.x + 0.3f, e->position.y, e->position.z + 0.3f};
 
         Vector3 ray_dir = Vector3Subtract(end, start);
         float ray_len = Vector3Length(ray_dir);
@@ -392,7 +391,8 @@ static void shoot_weapon(IngameState *state, Weapon *weapon) {
 
         if (hit && tmin >= 0.0f && tmin <= ray_len) {
             state->hit_time = GetTime();
-            if (e->player.health <= 34)
+            int health = e->type == ENT_NPC_GENERIC ? e->npc.health : e->player.health;
+            if (health <= 34)
                 state->kill_time = GetTime();
             break;
         }
@@ -625,21 +625,21 @@ static void render_frame(Global *global, IngameState *state, float ry, float rp,
     pthread_mutex_unlock(&state->entity_mutex);
 
     for (int i = 0; i < count; i++) {
-        if (!snapshot[i].active || snapshot[i].type != ENT_PLAYER)
+        if (!snapshot[i].active)
             continue;
         render_net_entity(&camera, global->assets, snapshot[i], global);
     }
     draw_shots(state->shots, state->shot_count);
 
-    // Debug: draw player hitboxes
     for (int i = 0; i < count; i++) {
-        if (!snapshot[i].active || snapshot[i].type != ENT_PLAYER)
+        if (!snapshot[i].active)
             continue;
+        Color box_color = snapshot[i].type == ENT_NPC_GENERIC ? RED : GREEN;
         Vector3 box_center = {snapshot[i].position.x, snapshot[i].position.y + 0.9f, snapshot[i].position.z};
-        DrawCubeWires(box_center, 0.6f, 1.8f, 0.6f, GREEN);
+        DrawCubeWires(box_center, 0.6f, 1.f, 0.6f, box_color);
     }
-    DrawCubeWires((Vector3){state->position.x, state->position.y + 0.9f, state->position.z},
-                  0.6f, 1.8f, 0.6f, GREEN);
+    DrawCubeWires((Vector3){state->position.x, state->position.y + 0.7f, state->position.z},
+                  0.6f, 1.2f, 0.6f, GREEN);
 
     EndMode3D();
 
