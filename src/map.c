@@ -38,6 +38,57 @@ Map *load_map(const char *file_path) {
     return map;
 }
 
+float raycast_sectors(Vector3 origin, Vector3 dir, float max_dist, Map *map) {
+    float closest = max_dist;
+    for (int i = 0; i < map->sector_count; i++) {
+        Sector *s = &map->sectors[i];
+        float tmin = -INFINITY, tmax = INFINITY;
+
+        if (fabsf(dir.x) < 0.0001f) {
+            if (origin.x < s->x || origin.x > s->x + s->width)
+                continue;
+        } else {
+            float t1 = (s->x - origin.x) / dir.x;
+            float t2 = (s->x + s->width - origin.x) / dir.x;
+            if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
+            if (t1 > tmin) tmin = t1;
+            if (t2 < tmax) tmax = t2;
+        }
+
+        if (fabsf(dir.z) < 0.0001f) {
+            if (origin.z < s->y || origin.z > s->y + s->height)
+                continue;
+        } else {
+            float t1 = (s->y - origin.z) / dir.z;
+            float t2 = (s->y + s->height - origin.z) / dir.z;
+            if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
+            if (t1 > tmin) tmin = t1;
+            if (t2 < tmax) tmax = t2;
+        }
+
+        {
+            float floor_y = s->floor_height;
+            float ceil_y = s->ceiling_enabled ? (float)s->ceiling_height : INFINITY;
+            if (fabsf(dir.y) < 0.0001f) {
+                if (origin.y < floor_y || origin.y > ceil_y)
+                    continue;
+            } else {
+                float t1 = (floor_y - origin.y) / dir.y;
+                float t2 = (ceil_y - origin.y) / dir.y;
+                if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
+                if (t1 > tmin) tmin = t1;
+                if (t2 < tmax) tmax = t2;
+            }
+        }
+
+        if (tmin > tmax) continue;
+        float t = (tmin < 0.0f) ? tmax : tmin;
+        if (t > 0.01f && t < closest)
+            closest = t;
+    }
+    return closest;
+}
+
 Sector *get_sector_at(Map *map, Vector3 pos) {
     for (int i = 0; i < map->sector_count; i++) {
         Sector *s = &map->sectors[i];

@@ -244,6 +244,18 @@ void sv_tick(Server *server, float dt) {
         if (shot->owner_client_id < 0)
             continue;
 
+        {
+            Vector3 dir = Vector3Subtract(shot->end, shot->start);
+            float len = Vector3Length(dir);
+            if (len > 0.01f) {
+                Vector3 dir_n = Vector3Normalize(dir);
+                float wall_t = raycast_sectors(shot->start, dir_n, len, &server->map);
+                if (wall_t < len) {
+                    shot->end = Vector3Add(shot->start, Vector3Scale(dir_n, wall_t));
+                }
+            }
+        }
+
         for (int e = 0; e < server->entity_count; e++) {
             Entity *entity = &server->entities[e];
             if (!entity->active || (entity->type != ENT_PLAYER && entity->type != ENT_NPC_GENERIC))

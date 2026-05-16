@@ -75,7 +75,9 @@ void *client_recv_thread(void *arg) {
         memcpy(global->ingame.prev_entities, global->ingame.entities,
                sizeof(global->ingame.entities));
         global->ingame.prev_update_time = global->ingame.last_update_time;
-        memcpy(global->ingame.entities, upd->entities, sizeof(upd->entities));
+        memset(global->ingame.entities, 0, sizeof(global->ingame.entities));
+        memcpy(global->ingame.entities, upd->entities,
+               upd->entity_count * sizeof(NetEntity));
         global->ingame.last_update_time = GetTime();
         global->ingame.myself = upd->your_player;
         global->ingame.entity_count = upd->entity_count;
@@ -391,6 +393,13 @@ static void shoot_weapon(IngameState *state, Weapon *weapon) {
     Vector3 forward = {sinf(ry) * cosf(rp), sinf(rp), cosf(ry) * cosf(rp)};
     Vector3 end = Vector3Add(start, Vector3Scale(forward, 1000.0f));
 
+    if (state->map) {
+        float wall_t = raycast_sectors(start, forward, 1000.0f, state->map);
+        if (wall_t < 1000.0f) {
+            end = Vector3Add(start, Vector3Scale(forward, wall_t));
+        }
+    }
+
     state->updatePkt.shots[state->updatePkt.shot_count++] = (Shot){
         .start = start,
         .end = end,
@@ -622,6 +631,8 @@ static uint8_t move_player(IngameState *state, Vector3 wishdir, float wishspeed,
     return jump_requested;
 }
 
+static void disconnect_from_server(IngameState *state);
+
 static void render_frame(Global *global, IngameState *state, float ry, float rp,
                          float camera_height) {
     int sw = GetScreenWidth();
@@ -837,13 +848,49 @@ static void render_frame(Global *global, IngameState *state, float ry, float rp,
 
         break;
     case IS_MENU: {
-        int offset = 0;
         DrawRectangle(0, 0, sw, sh, (Color){0, 0, 0, 200});
-        DrawTextEx(global->assets->default_font, "IronSRC", Vector2Zero(), 50, 0,
-                   (Color){255, 255, 255, 255});
-        offset += 50;
-        Rectangle rect = (Rectangle){0, offset, 30., 20.};
-        if (GuiButton(rect, "Exit")) {
+        int cx = sw / 2;
+        int col_x = sw / 4;
+        int title_size = 40;
+        Vector2 title = MeasureTextEx(global->assets->default_font, "PAUSED",
+                                       title_size, 0);
+        DrawTextEx(global->assets->default_font, "PAUSED",
+                   (Vector2){(sw - title.x) / 2, 30}, title_size, 0, WHITE);
+
+        int player_count = 0;
+        for (int i = 0; i < count; i++) {
+            if (snapshot[i].active && snapshot[i].type == ENT_PLAYER)
+                player_count++;
+        }
+        char header[32];
+        snprintf(header, sizeof(header), "Players (%d):", player_count);
+        int list_y = 90;
+        DrawTextEx(global->assets->default_font, header,
+                   (Vector2){col_x, list_y}, 22, 0, LIGHTGRAY);
+
+        int entry_y = list_y + 30;
+        for (int i = 0; i < count; i++) {
+            if (!snapshot[i].active || snapshot[i].type != ENT_PLAYER)
+                continue;
+            char line[64];
+            snprintf(line, sizeof(line), "%s  HP: %d",
+                     snapshot[i].player.username,
+                     snapshot[i].player.health);
+            DrawTextEx(global->assets->default_font, line,
+                       (Vector2){col_x + 10, entry_y}, 18, 0, WHITE);
+            entry_y += 24;
+        }
+
+        int btn_w = 160, btn_h = 36;
+        int btn_x = cx - btn_w / 2;
+        int btn_y = sh - 120;
+        if (GuiButton((Rectangle){btn_x, btn_y, btn_w, btn_h}, "Resume")) {
+            state->input_state = IS_MOVING;
+            DisableCursor();
+        }
+        if (GuiButton((Rectangle){btn_x, btn_y + btn_h + 10, btn_w, btn_h},
+                       "Disconnect")) {
+            disconnect_from_server(state);
             global->gamemode = GM_MENU;
             memset(state, 0, sizeof(IngameState));
         }
@@ -870,6 +917,15 @@ static void send_player_update(IngameState *state, uint8_t jump_requested) {
     sendto(state->sockfd, uu_buf, sizeof(uu_buf), 0,
            (struct sockaddr *)&state->sv_addr, sizeof(state->sv_addr));
     state->updatePkt.shot_count = 0;
+}
+
+static void disconnect_from_server(IngameState *state) {
+    uint8_t buf[sizeof(Packet)];
+    Packet *pkt = (Packet *)buf;
+    pkt->type = PKT_USER_DISCONNECT;
+    sendto(state->sockfd, buf, sizeof(buf), 0,
+           (struct sockaddr *)&state->sv_addr, sizeof(state->sv_addr));
+    close(state->sockfd);
 }
 
 void game_loop(Global *global) {

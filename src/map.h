@@ -32,5 +32,6 @@ Sector *get_sector_at(Map *map, Vector3 pos);
 int is_on_sector_floor(Vector3 position, Map *map, float step_height);
 int apply_sector_collision(Vector3 *position, Vector3 *velocity, Map *map,
                             float step_height, int resolve_floor);
+float raycast_sectors(Vector3 origin, Vector3 dir, float max_dist, Map *map);
 
 #endif // !MAP_H
