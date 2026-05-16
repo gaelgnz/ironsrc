@@ -72,7 +72,11 @@ void *client_recv_thread(void *arg) {
             global->ingame.damage_taken = 1;
         last_health = upd->your_player.player.health;
 
+        memcpy(global->ingame.prev_entities, global->ingame.entities,
+               sizeof(global->ingame.entities));
+        global->ingame.prev_update_time = global->ingame.last_update_time;
         memcpy(global->ingame.entities, upd->entities, sizeof(upd->entities));
+        global->ingame.last_update_time = GetTime();
         global->ingame.myself = upd->your_player;
         global->ingame.entity_count = upd->entity_count;
 
@@ -251,6 +255,9 @@ void connect_sv(Global *global, const char *map_name) {
     }
 
     pthread_mutex_init(&global->ingame.entity_mutex, NULL);
+    memset(global->ingame.prev_entities, 0, sizeof(global->ingame.prev_entities));
+    global->ingame.last_update_time = GetTime();
+    global->ingame.prev_update_time = global->ingame.last_update_time;
     global->ingame.sockfd = sockfd;
     global->ingame.sv_addr = sv_addr;
     global->ingame.input_state = IS_MOVING;
@@ -655,14 +662,31 @@ static void render_frame(Global *global, IngameState *state, float ry, float rp,
         draw_map(state->map, global->assets);
     pthread_mutex_lock(&state->entity_mutex);
     NetEntity snapshot[MAX_ENTITIES];
+    NetEntity prev_snapshot[MAX_ENTITIES];
     int count = state->entity_count;
     memcpy(snapshot, state->entities, count * sizeof(NetEntity));
+    memcpy(prev_snapshot, state->prev_entities, count * sizeof(NetEntity));
+    double update_time = state->last_update_time;
+    double prev_time = state->prev_update_time;
     pthread_mutex_unlock(&state->entity_mutex);
+
+    float interp = 1.0f;
+    double interval = update_time - prev_time;
+    if (interval > 0.0) {
+        interp = (GetTime() - update_time) / interval;
+        if (interp < 0.0f) interp = 0.0f;
+        if (interp > 1.0f) interp = 1.0f;
+    }
 
     for (int i = 0; i < count; i++) {
         if (!snapshot[i].active)
             continue;
-        render_net_entity(&camera, global->assets, snapshot[i], global);
+        NetEntity render_ent = snapshot[i];
+        if (prev_snapshot[i].active) {
+            render_ent.position = Vector3Lerp(prev_snapshot[i].position,
+                                              snapshot[i].position, interp);
+        }
+        render_net_entity(&camera, global->assets, render_ent, global);
     }
     draw_shots(state->shots, state->shot_count);
 
@@ -670,7 +694,12 @@ static void render_frame(Global *global, IngameState *state, float ry, float rp,
         if (!snapshot[i].active)
             continue;
         Color box_color = snapshot[i].type == ENT_NPC_GENERIC ? RED : GREEN;
-        Vector3 box_center = {snapshot[i].position.x, snapshot[i].position.y + 0.9f, snapshot[i].position.z};
+        Vector3 pos = snapshot[i].position;
+        if (prev_snapshot[i].active) {
+            pos = Vector3Lerp(prev_snapshot[i].position,
+                              snapshot[i].position, interp);
+        }
+        Vector3 box_center = {pos.x, pos.y + 0.9f, pos.z};
         DrawCubeWires(box_center, 0.6f, 1.f, 0.6f, box_color);
     }
     DrawCubeWires((Vector3){state->position.x, state->position.y + 0.7f, state->position.z},
@@ -729,9 +758,13 @@ static void render_frame(Global *global, IngameState *state, float ry, float rp,
     for (int i = 0; i < count; i++) {
         if (!snapshot[i].active || snapshot[i].type != ENT_PLAYER)
             continue;
+        Vector3 pos = snapshot[i].position;
+        if (prev_snapshot[i].active) {
+            pos = Vector3Lerp(prev_snapshot[i].position,
+                              snapshot[i].position, interp);
+        }
         draw_username_billboard(camera, global->assets->default_font,
-                                snapshot[i].position,
-                                snapshot[i].player.username);
+                                pos, snapshot[i].player.username);
     }
 
     const char *chat = state->chat;

@@ -33,6 +33,11 @@ typedef struct IngameState {
     int entity_count;
     pthread_mutex_t entity_mutex;
 
+    // interpolation
+    NetEntity prev_entities[256];
+    double last_update_time;
+    double prev_update_time;
+
     Font default_font;
     Entity myself;
 
