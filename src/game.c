@@ -266,6 +266,9 @@ void connect_sv(Global *global, const char *map_name) {
     global->ingame.sockfd = sockfd;
     global->ingame.sv_addr = sv_addr;
     global->ingame.input_state = IS_MOVING;
+    global->ingame.yaw = 0;
+    global->ingame.pitch = 0;
+    global->ingame.velocity = (Vector3){0, 0, 0};
     global->ingame.message_len = 0;
     strcpy(global->ingame.message, "ess");
     global->gamemode = GM_INGAME;
