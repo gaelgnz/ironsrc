@@ -3,6 +3,7 @@ map.c - Copyright (C) 2026 gaelgnz <gaelgnz06@gmail.com>
 Licensed under the GNU GPL v3. See LICENSE for details.
 */
 #include "map.h"
+#include "game.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,12 +25,12 @@ Map *load_map(const char *file_path) {
 
     // Validate map data
     if (map->sector_count < 0 || map->sector_count > MAX_SECTORS) {
-        printf("[MAP] Invalid sector_count: %d, resetting to 0\n",
+        game_log("Invalid sector_count: %d, resetting to 0",
                map->sector_count);
         map->sector_count = 0;
     }
     if (map->entity_count < 0 || map->entity_count > MAX_ENTITIES) {
-        printf("[MAP] Invalid entity_count: %d, resetting to 0\n",
+        game_log("Invalid entity_count: %d, resetting to 0",
                map->entity_count);
         map->entity_count = 0;
     }

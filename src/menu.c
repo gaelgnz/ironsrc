@@ -15,6 +15,7 @@ void menu_init(Global *global) {
     global->gamemode = GM_MENU;
     strcpy(global->menu.ip, "127.0.0.1");
     sprintf(global->menu.port, "%d", 4445);
+    global->menu.map[0] = '\0';
 }
 
 void menu_loop(Global *global) {
@@ -110,8 +111,10 @@ void menu_loop(Global *global) {
             int action_y = panel_y + panel_h - 48;
             if (GuiButton((Rectangle){field_x, action_y, 120, 32},
                           "Start Host")) {
+                EndDrawing();
                 host(state->map);
                 connect_sv(global, state->map);
+                return;
             }
             if (GuiButton(
                     (Rectangle){panel_x + panel_w - 100, action_y, 80, 32},
@@ -146,7 +149,9 @@ void menu_loop(Global *global) {
 
             int action_y = panel_y + panel_h - 48;
             if (GuiButton((Rectangle){field_x, action_y, 120, 32}, "Connect")) {
+                EndDrawing();
                 connect_sv(global, state->map);
+                return;
             }
             if (GuiButton(
                     (Rectangle){panel_x + panel_w - 100, action_y, 80, 32},

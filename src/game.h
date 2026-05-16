@@ -66,4 +66,6 @@ typedef struct Global Global;
 void game_loop(Global *global);
 void connect_sv(Global *global, const char *map_name);
 void host(const char *map_name);
+void game_log(const char *fmt, ...);
+void game_log_init(void);
 #endif

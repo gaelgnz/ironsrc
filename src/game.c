@@ -18,6 +18,7 @@ Licensed under the GNU GPL v3. See LICENSE for details.
 #include <math.h>
 #include <pthread.h>
 #include <signal.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/prctl.h>
@@ -90,7 +91,40 @@ void *client_recv_thread(void *arg) {
     return NULL;
 }
 
+#define MAX_LOG_LINES 32
+#define MAX_LOG_LINE_LEN 128
+static char load_lines[MAX_LOG_LINES][MAX_LOG_LINE_LEN];
+static int load_count = 0;
+
+void game_log_init(void) {
+    load_count = 0;
+}
+
+void game_log(const char *fmt, ...) {
+    char buf[MAX_LOG_LINE_LEN];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+
+    int idx = load_count % MAX_LOG_LINES;
+    strcpy(load_lines[idx], buf);
+    load_count++;
+
+    int display_count = load_count < MAX_LOG_LINES ? load_count : MAX_LOG_LINES;
+    int start = load_count < MAX_LOG_LINES ? 0 : load_count - MAX_LOG_LINES;
+
+    BeginDrawing();
+    ClearBackground(BLACK);
+    for (int i = 0; i < display_count; i++) {
+        DrawText(load_lines[(start + i) % MAX_LOG_LINES], 10, 10 + i * 20, 20,
+                 WHITE);
+    }
+    EndDrawing();
+}
+
 void connect_sv(Global *global, const char *map_name) {
+    game_log_init();
     if (!map_name || !map_name[0])
         map_name = "map.dat";
     int sockfd;
@@ -105,6 +139,7 @@ void connect_sv(Global *global, const char *map_name) {
     inet_pton(AF_INET, ip, &sv_addr.sin_addr);
 
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    game_log("Creating UDP socket...");
 
     struct timeval tv = {0};
     tv.tv_usec = 200000;
@@ -118,6 +153,7 @@ void connect_sv(Global *global, const char *map_name) {
 
     uint8_t recv_buf[sizeof(Packet) + sizeof(pktServerUpdate)];
     int connected = 0;
+    game_log("Connecting to %s:%d...", ip, port);
     for (int attempt = 0; attempt < 20 && !connected; attempt++) {
         sendto(sockfd, join_buf, sizeof(join_buf), 0,
                (struct sockaddr *)&sv_addr, sizeof(sv_addr));
@@ -138,10 +174,12 @@ void connect_sv(Global *global, const char *map_name) {
     if (!connected)
         return;
 
+    game_log("Server accepted connection!");
+
     // Receive map via TCP
-    printf("[TCP] Connecting to TCP map server on port 4446...\n");
+    game_log("Connecting to TCP map server on port 4446...");
     int tcp_fd = socket(AF_INET, SOCK_STREAM, 0);
-    printf("[TCP] TCP socket created: %d\n", tcp_fd);
+    game_log("TCP socket created: %d", tcp_fd);
     struct sockaddr_in tcp_addr = sv_addr;
     tcp_addr.sin_port = htons(4446);
 
@@ -153,66 +191,63 @@ void connect_sv(Global *global, const char *map_name) {
     setsockopt(tcp_fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
 
     if (connect(tcp_fd, (struct sockaddr *)&tcp_addr, sizeof(tcp_addr)) == 0) {
-        printf("[TCP] TCP connected, receiving map...\n");
+        game_log("TCP connected, receiving map...");
         int map_size;
         int n = read(tcp_fd, &map_size, sizeof(map_size));
         if (n != sizeof(map_size)) {
-            printf("[TCP] Failed to read map size, got %d bytes\n", n);
+            game_log("Failed to read map size, got %d bytes", n);
             close(tcp_fd);
             global->ingame.map = load_map(map_name);
         } else {
-            printf("[TCP] Received map size: %d\n", map_size);
+            game_log("Received map size: %d bytes", map_size);
             global->ingame.map = malloc(map_size);
             int total_read = 0;
             while (total_read < map_size) {
                 n = read(tcp_fd, (char *)global->ingame.map + total_read,
                          map_size - total_read);
                 if (n <= 0) {
-                    printf(
-                        "[TCP] Failed to read map data, got %d (total %d/%d)\n",
+                    game_log("Failed to read map data, got %d (total %d/%d)",
                         n, total_read, map_size);
                     break;
                 }
                 total_read += n;
-                printf("[TCP] Read %d bytes (total %d/%d)\n", n, total_read,
+                game_log("Read %d bytes (total %d/%d)", n, total_read,
                        map_size);
             }
             close(tcp_fd);
             if (total_read == map_size) {
-                printf("[TCP] Map received successfully\n");
-                // Print map info
-                printf("[TCP] Map has %d sectors, %d entities\n",
+                game_log("Map received successfully");
+                game_log("Map has %d sectors, %d entities",
                        global->ingame.map->sector_count,
                        global->ingame.map->entity_count);
             } else {
-                printf("[TCP] Map receive incomplete, got %d/%d bytes\n",
+                game_log("Map receive incomplete, got %d/%d bytes",
                        total_read, map_size);
                 free(global->ingame.map);
                 global->ingame.map = load_map(map_name);
             }
         }
     } else {
-        printf("[TCP] TCP connect failed, falling back to local file\n");
-        // Fallback to local file
+        game_log("TCP connect failed, falling back to local file");
         global->ingame.map = load_map(map_name);
     }
 
     // Find PLAYER_START and set initial position
     if (global->ingame.map) {
-        printf("[GAME] Map has %d sectors, %d entities\n",
+        game_log("Map has %d sectors, %d entities",
                global->ingame.map->sector_count,
                global->ingame.map->entity_count);
         for (int i = 0; i < global->ingame.map->entity_count; i++) {
             Entity *e = &global->ingame.map->entities[i];
             if (e->active && e->type == ENT_PLAYER_START) {
                 global->ingame.position = e->position;
-                printf("[GAME] Spawning at PLAYER_START %f, %f, %f\n",
+                game_log("Spawning at PLAYER_START %.1f, %.1f, %.1f",
                        e->position.x, e->position.y, e->position.z);
                 break;
             }
         }
     } else {
-        printf("[GAME] No map loaded, using default position\n");
+        game_log("No map loaded, using default position");
     }
 
     pthread_mutex_init(&global->ingame.entity_mutex, NULL);
