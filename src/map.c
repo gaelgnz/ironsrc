@@ -4,6 +4,7 @@ Licensed under the GNU GPL v3. See LICENSE for details.
 */
 #include "map.h"
 #include "game.h"
+#include "raymath.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -40,51 +41,89 @@ Map *load_map(const char *file_path) {
 
 float raycast_sectors(Vector3 origin, Vector3 dir, float max_dist, Map *map) {
     float closest = max_dist;
+
     for (int i = 0; i < map->sector_count; i++) {
         Sector *s = &map->sectors[i];
-        float tmin = -INFINITY, tmax = INFINITY;
 
-        if (fabsf(dir.x) < 0.0001f) {
-            if (origin.x < s->x || origin.x > s->x + s->width)
-                continue;
-        } else {
-            float t1 = (s->x - origin.x) / dir.x;
-            float t2 = (s->x + s->width - origin.x) / dir.x;
-            if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
-            if (t1 > tmin) tmin = t1;
-            if (t2 < tmax) tmax = t2;
-        }
-
-        if (fabsf(dir.z) < 0.0001f) {
-            if (origin.z < s->y || origin.z > s->y + s->height)
-                continue;
-        } else {
-            float t1 = (s->y - origin.z) / dir.z;
-            float t2 = (s->y + s->height - origin.z) / dir.z;
-            if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
-            if (t1 > tmin) tmin = t1;
-            if (t2 < tmax) tmax = t2;
-        }
-
-        {
-            float floor_y = s->floor_height;
-            float ceil_y = s->ceiling_enabled ? (float)s->ceiling_height : INFINITY;
-            if (fabsf(dir.y) < 0.0001f) {
-                if (origin.y < floor_y || origin.y > ceil_y)
-                    continue;
-            } else {
-                float t1 = (floor_y - origin.y) / dir.y;
-                float t2 = (ceil_y - origin.y) / dir.y;
-                if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
-                if (t1 > tmin) tmin = t1;
-                if (t2 < tmax) tmax = t2;
+        // Ceiling plane
+        if (s->ceiling_enabled && fabsf(dir.y) > 0.0001f) {
+            float t = (s->ceiling_height - origin.y) / dir.y;
+            if (t > 0.01f && t < closest) {
+                Vector3 p = Vector3Add(origin, Vector3Scale(dir, t));
+                if (p.x >= s->x && p.x <= s->x + s->width &&
+                    p.z >= s->y && p.z <= s->y + s->height)
+                    closest = t;
             }
         }
 
-        if (tmin > tmax) continue;
-        float t = (tmin < 0.0f) ? tmax : tmin;
-        if (t > 0.01f && t < closest)
-            closest = t;
+        // Floor plane
+        if (fabsf(dir.y) > 0.0001f) {
+            float t = (s->floor_height - origin.y) / dir.y;
+            if (t > 0.01f && t < closest) {
+                Vector3 p = Vector3Add(origin, Vector3Scale(dir, t));
+                if (p.x >= s->x && p.x <= s->x + s->width &&
+                    p.z >= s->y && p.z <= s->y + s->height)
+                    closest = t;
+            }
+        }
+
+        // Wall faces — skip edges shared with an adjacent sector at the same floor height
+        struct { float pos; int is_x; int positive; } faces[4] = {
+            {s->x,           1, 0},
+            {s->x + s->width, 1, 1},
+            {s->y,           0, 0},
+            {s->y + s->height, 0, 1},
+        };
+        for (int f = 0; f < 4; f++) {
+            int adjacent = 0;
+            for (int j = 0; j < map->sector_count; j++) {
+                if (i == j) continue;
+                Sector *a = &map->sectors[j];
+                if (faces[f].is_x) {
+                    if ((!faces[f].positive && a->x + a->width == faces[f].pos) ||
+                        (faces[f].positive && a->x == faces[f].pos)) {
+                        if (a->y < s->y + s->height && a->y + a->height > s->y) {
+                            if (a->floor_height == s->floor_height) {
+                                adjacent = 1;
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    if ((!faces[f].positive && a->y + a->height == faces[f].pos) ||
+                        (faces[f].positive && a->y == faces[f].pos)) {
+                        if (a->x < s->x + s->width && a->x + a->width > s->x) {
+                            if (a->floor_height == s->floor_height) {
+                                adjacent = 1;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            if (adjacent) continue;
+
+            float t;
+            if (faces[f].is_x) {
+                if (fabsf(dir.x) < 0.0001f) continue;
+                t = (faces[f].pos - origin.x) / dir.x;
+            } else {
+                if (fabsf(dir.z) < 0.0001f) continue;
+                t = (faces[f].pos - origin.z) / dir.z;
+            }
+            if (t > 0.01f && t < closest) {
+                Vector3 p = Vector3Add(origin, Vector3Scale(dir, t));
+                int hit = 1;
+                if (faces[f].is_x) {
+                    if (p.z < s->y || p.z > s->y + s->height) hit = 0;
+                } else {
+                    if (p.x < s->x || p.x > s->x + s->width) hit = 0;
+                }
+                float ceil_y = s->ceiling_enabled ? (float)s->ceiling_height : INFINITY;
+                if (p.y < s->floor_height || p.y > ceil_y) hit = 0;
+                if (hit) closest = t;
+            }
+        }
     }
     return closest;
 }
