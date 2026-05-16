@@ -33,6 +33,9 @@ Licensed under the GNU GPL v3. See LICENSE for details.
 #define CROUCH_CAMERA_HEIGHT 0.5f
 #define NORMAL_CAMERA_HEIGHT 1.0f
 #define STEP_HEIGHT 1.0f
+#define BOB_SPEED 3.0f
+#define BOB_AMP_X 6.0f
+#define BOB_AMP_Y 3.0f
 
 static float blocked_x = 0, blocked_z = 0;
 
@@ -272,6 +275,8 @@ void connect_sv(Global *global, const char *map_name) {
     global->ingame.damage_taken = 0;
     global->ingame.hit_time = 0;
     global->ingame.kill_time = 0;
+    global->ingame.bob_phase = 0;
+    global->ingame.last_step_phase = 0;
 
     if (FileExists("chat.wav")) {
         global->ingame.chat_sound = LoadSound("chat.wav");
@@ -762,7 +767,13 @@ static void render_frame(Global *global, IngameState *state, float ry, float rp,
     Weapon *cur_weapon = &state->inventory[state->inventory_idx];
     Texture2D tex = get_texture(global->assets, cur_weapon->heldtexture);
     int tex_w = tex.width, tex_h = tex.height;
-    Rectangle desired = (Rectangle){sw / 4 * 2, sh - tex_h, tex_w, tex_h};
+    float hspeed = sqrtf(state->velocity.x * state->velocity.x +
+                         state->velocity.z * state->velocity.z);
+    float speed_ratio = fminf(hspeed / MAX_SPEED, 1.0f);
+    float bob_x = sinf(state->bob_phase) * BOB_AMP_X * speed_ratio;
+    float bob_y = fabsf(cosf(state->bob_phase)) * BOB_AMP_Y * speed_ratio;
+    Rectangle desired = (Rectangle){sw / 4 * 2 + bob_x, sh - tex_h + bob_y,
+                                    tex_w, tex_h};
     DrawTexturePro(tex, (Rectangle){0, 0, tex_w, tex_h}, desired,
                    (Vector2){0, 0}, 0.f, WHITE);
 
@@ -946,6 +957,25 @@ void game_loop(Global *global) {
     if (state->myself.player.health > 0) {
         wishdir = handle_input(state, forward, right, &wishspeed, &camera_height);
         jump_requested = move_player(state, wishdir, wishspeed, frameTime);
+    }
+
+    {
+        float hspeed = sqrtf(state->velocity.x * state->velocity.x +
+                             state->velocity.z * state->velocity.z);
+        int on_ground = state->position.y <= 0.0f ||
+                        (state->map && is_on_sector_floor(state->position,
+                                                          state->map, STEP_HEIGHT));
+        if (on_ground && hspeed > 0.1f) {
+            state->bob_phase += hspeed * BOB_SPEED * frameTime;
+            while (state->bob_phase - state->last_step_phase >= PI) {
+                state->last_step_phase += PI;
+                Sound s = get_sound(global->assets, "footstep");
+                if (s.stream.buffer)
+                    PlaySound(s);
+            }
+        } else {
+            state->last_step_phase = state->bob_phase;
+        }
     }
 
     render_frame(global, state, ry, rp, camera_height);

@@ -65,6 +65,10 @@ typedef struct IngameState {
     int damage_taken;
     double hit_time;
     double kill_time;
+
+    // weapon bob
+    float bob_phase;
+    float last_step_phase;
 } IngameState;
 
 typedef struct Global Global;
