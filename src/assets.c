@@ -37,7 +37,7 @@ Assets *assets_load() {
         FilePathList files = LoadDirectoryFiles(snd_dir);
         for (int i = 0; i < files.count && assets->sound_count < SOUNDS_MAX;
              i++) {
-            if (IsFileExtension(files.paths[i], ".wav")) {
+            if (IsFileExtension(files.paths[i], ".wav") || IsFileExtension(files.paths[i], ".mp3")) {
                 Sound snd = LoadSound(files.paths[i]);
                 const char *fileName = GetFileNameWithoutExt(files.paths[i]);
                 strncpy(assets->sounds[assets->sound_count].name, fileName,

@@ -10,3 +10,9 @@ Weapon revolver() {
         "gun", "gun", "gun", 16, WT_RAYCAST, 1.f, false,
     };
 }
+
+Weapon crowbar() {
+    return (Weapon){
+        "crowbar", "crowbar", "crowbar", 0, WT_MELEE, 0.5, 0
+    };
+}

@@ -91,9 +91,16 @@ void *client_recv_thread(void *arg) {
         strcpy(global->ingame.chat, upd->chat);
         memcpy(last_chat, upd->chat, sizeof(last_chat));
 
+        global->ingame.server_tick = upd->tick;
         global->ingame.shot_count = upd->shot_count;
         memcpy(global->ingame.shots, upd->shots,
                upd->shot_count * sizeof(Shot));
+
+        global->ingame.recv_sound_count = upd->sound_count;
+        if (upd->sound_count > MAX_SOUNDS)
+            global->ingame.recv_sound_count = MAX_SOUNDS;
+        memcpy(global->ingame.recv_sounds, upd->sounds,
+               global->ingame.recv_sound_count * sizeof(SoundWorld));
 
         pthread_mutex_unlock(&global->ingame.entity_mutex);
     }
@@ -278,6 +285,7 @@ void connect_sv(Global *global, const char *map_name) {
     global->ingame.damage_taken = 0;
     global->ingame.hit_time = 0;
     global->ingame.kill_time = 0;
+    global->ingame.server_tick = 0;
     global->ingame.bob_phase = 0;
     global->ingame.last_step_phase = 0;
 
@@ -412,7 +420,15 @@ static void shoot_weapon(IngameState *state, Weapon *weapon) {
         .start = start,
         .end = end,
         .damage = 34,
+        .spawn_tick = state->server_tick + 1,
     };
+
+    if (state->updatePkt.sound_count < 5) {
+        state->updatePkt.sounds[state->updatePkt.sound_count++] = (SoundWorld){
+            .position = start,
+            .sound_name = "pistol_shot",
+        };
+    }
 
     pthread_mutex_lock(&state->entity_mutex);
     for (int i = 0; i < state->entity_count; i++) {
@@ -707,7 +723,23 @@ static void render_frame(Global *global, IngameState *state, float ry, float rp,
         }
         render_net_entity(&camera, global->assets, render_ent, global);
     }
-    draw_shots(state->shots, state->shot_count);
+    {
+        float tick_ival = 1.0f / 20.0f;
+        float frac = (GetTime() - state->last_update_time) / tick_ival;
+        if (frac < 0.0f) frac = 0.0f;
+        if (frac > 1.0f) frac = 1.0f;
+        for (uint16_t si = 0; si < state->shot_count; si++) {
+            Shot *sh = &state->shots[si];
+            float age = (float)(state->server_tick - sh->spawn_tick) + frac;
+            float t = age / 5.0f;
+            if (t >= 1.0f) {
+                DrawLine3D(sh->start, sh->end, YELLOW);
+            } else if (t > 0.0f) {
+                Vector3 pos = Vector3Lerp(sh->start, sh->end, t);
+                DrawLine3D(sh->start, pos, YELLOW);
+            }
+        }
+    }
 
     for (int i = 0; i < count; i++) {
         if (!snapshot[i].active)
@@ -779,6 +811,18 @@ static void render_frame(Global *global, IngameState *state, float ry, float rp,
                                     tex_w, tex_h};
     DrawTexturePro(tex, (Rectangle){0, 0, tex_w, tex_h}, desired,
                    (Vector2){0, 0}, 0.f, WHITE);
+
+    {
+        char name[32];
+        strcpy(name, cur_weapon->viewtexture);
+        name[0] = name[0] >= 'a' && name[0] <= 'z' ? name[0] - 32 : name[0];
+        char wep_info[64];
+        snprintf(wep_info, sizeof(wep_info), "%s  %d", name, cur_weapon->ammo);
+        Vector2 sz = MeasureTextEx(global->assets->default_font, wep_info, 18, 0);
+        DrawTextEx(global->assets->default_font, wep_info,
+                   (Vector2){(sw - sz.x) / 2, cross_cy + cross_size + 20},
+                   18, 0, WHITE);
+    }
 
     for (int i = 0; i < count; i++) {
         if (!snapshot[i].active || snapshot[i].type != ENT_PLAYER)
@@ -931,6 +975,7 @@ static void send_player_update(IngameState *state, uint8_t jump_requested) {
     sendto(state->sockfd, uu_buf, sizeof(uu_buf), 0,
            (struct sockaddr *)&state->sv_addr, sizeof(state->sv_addr));
     state->updatePkt.shot_count = 0;
+    state->updatePkt.sound_count = 0;
 }
 
 static void disconnect_from_server(IngameState *state) {
@@ -982,6 +1027,29 @@ void game_loop(Global *global) {
     }
 
     render_frame(global, state, ry, rp, camera_height);
+
+    {
+        pthread_mutex_lock(&state->entity_mutex);
+        int sc = state->recv_sound_count;
+        SoundWorld sw_buf[16];
+        if (sc > 16) sc = 16;
+        memcpy(sw_buf, state->recv_sounds, sc * sizeof(SoundWorld));
+        state->recv_sound_count = 0;
+        pthread_mutex_unlock(&state->entity_mutex);
+
+        for (int i = 0; i < sc; i++) {
+            float dist = Vector3Distance(sw_buf[i].position, state->position);
+            float volume = fmaxf(0.0f, 1.0f - dist / 100.0f);
+            volume = volume * volume;
+            if (volume > 0.01f) {
+                Sound s = get_sound(global->assets, sw_buf[i].sound_name);
+                if (s.stream.buffer) {
+                    SetSoundVolume(s, volume);
+                    PlaySound(s);
+                }
+            }
+        }
+    }
 
     if (state->damage_taken) {
         state->damage_taken = 0;

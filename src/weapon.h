@@ -12,6 +12,7 @@ Licensed under the GNU GPL v3. See LICENSE for details.
 typedef enum WeaponType {
     WT_RAYCAST,
     WT_PROJECTILE,
+    WT_MELEE,
 } WeaponType;
 
 typedef struct Weapon {
@@ -29,8 +30,9 @@ typedef struct Shot {
     Vector3 end;
     int damage;
     int owner_client_id;
+    uint32_t spawn_tick;
 } Shot;
 
 Weapon revolver();
-
+Weapon crowbar();
 #endif // !WEAPON_H

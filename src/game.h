@@ -59,6 +59,10 @@ typedef struct IngameState {
 
     Shot shots[MAX_SHOTS];
     uint16_t shot_count;
+    uint32_t server_tick;
+
+    SoundWorld recv_sounds[MAX_SOUNDS];
+    int recv_sound_count;
 
     double death_start;
     int prev_health;

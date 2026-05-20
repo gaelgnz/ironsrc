@@ -45,6 +45,9 @@ void sv_broadcast(Server *server, int listenfd) {
     upd->shot_count = server->shot_count;
     memcpy(upd->shots, server->shots, server->shot_count * sizeof(Shot));
 
+    upd->sound_count = server->sound_count;
+    memcpy(upd->sounds, server->sounds, server->sound_count * sizeof(SoundWorld));
+
     for (int c = 0; c < server->client_count; c++) {
         Entity *me = entity_from_client_id(server, c);
 
@@ -94,6 +97,8 @@ void sv_broadcast(Server *server, int listenfd) {
                (struct sockaddr *)&server->clients[c].sockaddr,
                sizeof(server->clients[c].sockaddr));
     }
+
+    server->sound_count = 0;
 }
 int sv_find_client(Server *sv, struct sockaddr_in addr) {
     for (int i = 0; i < sv->client_count; i++) {
@@ -187,7 +192,12 @@ void sv_receive_update(Server *server, int client_id, pktUserUpdate cmd) {
 
     for (int i = 0; i < cmd.shot_count && server->shot_count < MAX_SHOTS; i++) {
         cmd.shots[i].owner_client_id = client_id;
+        cmd.shots[i].spawn_tick = server->tick;
         server->shots[server->shot_count++] = cmd.shots[i];
+    }
+
+    for (int i = 0; i < cmd.sound_count && server->sound_count < MAX_SOUNDS; i++) {
+        server->sounds[server->sound_count++] = cmd.sounds[i];
     }
 }
 

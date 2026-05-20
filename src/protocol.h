@@ -8,14 +8,15 @@ Licensed under the GNU GPL v3. See LICENSE for details.
 #include "entity.h"
 #include "map.h"
 #include "raylib.h"
-#include "stdint.h"
 #include "weapon.h"
 #include <stddef.h>
+#include <stdint.h>
 
 #define MAX_MSG_LEN 32
 #define NOT_CLIENT -1
 #define MAX_USERNAME_LEN 12
 #define MAX_SHOTS 1024
+#define MAX_SOUNDS 64
 typedef enum PacketType {
     PKT_USER_UPDATE,
     PKT_USER_JOIN,
@@ -30,12 +31,20 @@ typedef struct {
     uint8_t data[];
 } Packet;
 
+typedef struct SoundWorld {
+    Vector3 position;
+    char sound_name[32];
+} SoundWorld;
+
 typedef struct pktUserUpdate {
     Vector3 position;
     Vector3 current_velocity;
     uint8_t jump_requested;
     Shot shots[16];
     uint8_t shot_count;
+
+    SoundWorld sounds[5];
+    uint8_t sound_count;
 } pktUserUpdate;
 
 typedef struct pktUserJoin {
@@ -57,6 +66,9 @@ typedef struct pktServerUpdate {
 
     Shot shots[MAX_SHOTS];
     uint16_t shot_count;
+
+    SoundWorld sounds[MAX_SOUNDS];
+    uint16_t sound_count;
 } pktServerUpdate;
 
 typedef struct pktUserMessage {

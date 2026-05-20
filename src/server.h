@@ -7,7 +7,7 @@ Licensed under the GNU GPL v3. See LICENSE for details.
 
 #include "entity.h"
 #include "protocol.h"
-#include "stdint.h"
+#include <stdint.h>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -21,6 +21,7 @@ Licensed under the GNU GPL v3. See LICENSE for details.
 #define MAX_CLIENTS 16
 #define MAX_ENTITIES 256
 #define CHAT_LEN 1024
+
 
 typedef struct Client {
     char username[12];
@@ -49,6 +50,9 @@ typedef struct Server {
     Shot shots[MAX_SHOTS];
     uint16_t shot_count;
     uint16_t last_processed_shot;
+
+    SoundWorld sounds[MAX_SOUNDS];
+    uint16_t sound_count;
 
     Map map;
 } Server;
